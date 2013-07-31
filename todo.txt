@@ -1,0 +1,90 @@
+
+/*
+sql 
+
+type Rows *sql.rows
+Rows.Map -- map
+Rows.Scalar-- interface{}
+Rows.Entity -- struct
+
+type Row *sql.rows
+Row.Map -- map
+Row.Scalar - interface{}
+Row.Entity -- struct
+
+var m map[string]interface{}
+var json
+var entity 
+
+-- text
+db.Query("select * from table where id > ?", 1)
+db.Exec("select * from table where id > ?", 1)
+
+-- template
+db.QueryTemplate("select * from table where id > {id}", m,json,entity)
+db.ExecTemplate("select * from table where id > {id}", m,json,entity)
+
+--procedure
+db.QueryFunc("sp_demo", 1,2,3)
+db.ExecFunc("sp_demo", 1,2,3)
+
+--procedure
+db.QueryFuncSchema("sp_demo",m,json,entity)
+db.ExecFuncSchema("sp_demo", m,json,entity)
+
+--procedure
+sp = new(procedure)
+sp.a = a
+sp.b = b
+sp.c = c
+
+sp.query()
+sp.execute()
+
+
+--expression
+db.QueryExp(CRUD, 1,2,3)
+db.ExecExp(CRUD, 1,2,3)
+
+
+--ORM
+
+
+--utils
+#delete
+DeleteBy(string table, ...args(left op right))
+Delete(Delete)
+
+update
+UpdateColumnBy(string table, string columnToUpdate, object valueToUpdate,...args(left op right)
+UpdateBy(string table, IDataObjectAdapter data, ...args(left op right))
+Update(Update)
+
+#query
+QueryMax(string table, string column, ...args(left op right))
+QueryMin(string table, string column, ...args(left op right))
+QueryExists(string table, ...args(left op right))
+QueryCount(string table, ...args(left op right))
+QueryColumn(string table, string column, distinct, ...args(left op right))
+QueryBy(string table, ...args(left op right))
+Query(Query)
+
+
+#insert
+InsertBy(string table, IDataObjectAdapter data--m,json,entity)
+Insert(Insert)
+*/
+
+// Pre/post insert/update/delete hooks
+
+// Provider
+// ===========================
+// MSSql
+// SqlServerCe
+// MySql
+// OleDb
+// Odbc
+// Access
+// SQLite
+// Oracle
+// PostgreSQL
