@@ -247,7 +247,6 @@ func (db *DB) Query(query string, args ...interface{}) (*sql.Rows, error) {
 	if err := db.Open(); err != nil {
 		return nil, err
 	}
-
 	rows, err := db.innerdb.Query(query, args...)
 	if LogLevel >= LogDebug {
 		logDebug("DB query:", query, args, err)

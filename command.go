@@ -133,6 +133,12 @@ func (pc *Procedure) Set(name string, value interface{}) *Procedure {
 	return pc
 }
 
+// SetDir append a Parameter
+func (pc *Procedure) SetDir(name string, value interface{}, dir ansi.Dir) *Procedure {
+	pc.Parameter(&Parameter{Name: name, Value: value, Dir: dir})
+	return pc
+}
+
 // ReturnParameterName return parameter name if parameter is ansi.DirReturn
 func (pc *Procedure) ReturnParameterName() string {
 	l := len(pc.Parameters)

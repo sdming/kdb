@@ -1,14 +1,11 @@
-/*
-example of mysql
-
-*/
 package main
 
 import (
 	"database/sql"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/bmizerany/pq"
 	"github.com/sdming/kdb"
+	"github.com/sdming/kdb/ansi"
 	"log"
 	"os"
 	"time"
@@ -26,27 +23,29 @@ var data map[string]interface{} = map[string]interface{}{
 }
 
 func init() {
-	kdb.RegisterDSN("demo", "mysql", "data:data@tcp(172.18.194.136:3306)/demo")
+	kdb.RegisterDSN("demo", "postgres", "user=postgres password=sa dbname=postgres sslmode=disable client_encoding=UTF8")
 	kdb.LogLevel = kdb.LogDebug
 	kdb.Logger = log.New(os.Stdout, "kdb", log.Ldate|log.Ltime)
 }
 
 func procedure() {
 	db := kdb.NewDB("demo")
-	fmt.Println("\nQueryFunc", "sp_query")
-	printRows(db.QueryFunc("sp_query", kdb.Map(data)))
+	fmt.Println("\nQueryFunc", "fn_query")
+	printRows(db.QueryFunc("fn_query", kdb.Map(data)))
 	db.Close()
 
 	db = kdb.NewDB("demo")
-	fmt.Println("\nExecFunc", "sp_exec")
-	printResult(db.ExecFunc("sp_exec", kdb.Map(data)))
+	fmt.Println("\nExecFunc", "fn_exec")
+	printRows(db.QueryFunc("fn_exec", kdb.Map(data)))
 	db.Close()
 
 	db = kdb.NewDB("demo")
-	fmt.Println("\nProcedure", "sp_exec")
-	sp := kdb.NewProcedure("sp_exec").
-		Set("cint", 42)
-	printResult(db.ExecExp(sp))
+	fmt.Println("\nProcedure", "fn_inout")
+	sp := kdb.NewProcedure("fn_inout").
+		Set("x", 3).
+		SetDir("y", 5, ansi.DirInOut).
+		SetDir("sum", nil, ansi.DirOut)
+	printRows(db.QueryExp(sp))
 	db.Close()
 }
 
@@ -56,11 +55,11 @@ func basic() {
 
 	var query string
 
-	query = "select * from ttable where cint > ?"
+	query = "select * from ttable where cint > $1"
 	fmt.Println("\nQuery:", query)
 	printRows(db.Query(query, 1))
 
-	query = "update ttable set cdatetime=NOW() where cint > ?"
+	query = "update ttable set cdatetime=NOW() where cint > $1"
 	fmt.Println("\nExec", query)
 	printResult(db.Exec(query, 1))
 
@@ -95,13 +94,34 @@ func schema() {
 
 	fmt.Println("\nTable", "ttable")
 	if table, err := db.Table("ttable"); err != nil {
-		fmt.Println(err)
+		fmt.Println("Table", err)
 	} else {
 		fmt.Println(table)
 	}
 
-	fmt.Println("\nFunction", "sp_query")
-	if fn, err := db.Function("sp_query"); err != nil {
+	fmt.Println("\nFunction", "fn_query")
+	if fn, err := db.Function("fn_query"); err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(fn)
+	}
+
+	fmt.Println("\nFunction", "fn_exec")
+	if fn, err := db.Function("fn_exec"); err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(fn)
+	}
+
+	fmt.Println("\nFunction", "fn_inout")
+	if fn, err := db.Function("fn_inout"); err != nil {
+		fmt.Println(err)
+	} else {
+		fmt.Println(fn)
+	}
+
+	fmt.Println("\nFunction", "fn_notexists")
+	if fn, err := db.Function("fn_notexists"); err != nil {
 		fmt.Println(err)
 	} else {
 		fmt.Println(fn)
@@ -200,7 +220,6 @@ func updateTable() {
 	u.Set("cstring", "cstring new").
 		Set("cfloat", 6.28)
 	u.Where.Equals("cint", 42)
-	u.Limit(1000)
 
 	printResult(db.ExecExp(u))
 

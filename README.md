@@ -23,6 +23,11 @@ Sorry for bad english, if you want to improve documents, please contact me.
 
 Go 1.1+  
 
+## Installation
+
+go get github.com/sdming/kdb 
+
+
 ## Example 
 
 	func basic() {
@@ -71,7 +76,6 @@ Go 1.1+
 
 ## Store Procedure  
 
-
 	func procedure() {
 		db := kdb.NewDB("demo")
 		fmt.Println("\nQueryFunc", "sp_query")
@@ -93,7 +97,6 @@ Go 1.1+
 
 
 ## Select
-
 
 	func selectTable() {
 		db := kdb.NewDB("demo")
@@ -148,7 +151,6 @@ Go 1.1+
 
 ## Update 
 
-
 	func updateTable() {
 		db := kdb.NewDB("demo")
 		defer db.Close()
@@ -173,7 +175,6 @@ Go 1.1+
 
 
 ## Delete
-
 
 	func deleteTable() {
 		db := kdb.NewDB("demo")
@@ -202,8 +203,7 @@ Go 1.1+
 	}
 
 
-# Insert 
-
+## Insert 
 
 	func insertTable() {
 		db := kdb.NewDB("demo")
@@ -235,18 +235,41 @@ Go 1.1+
 
 	}
 
+## Get schema
 
-## Installation
+	func schema() {
+		db := kdb.NewDB("demo")
+		defer db.Close()
 
-go get github.com/sdming/kdb 
+		fmt.Println("\nTable", "ttable")
+		if table, err := db.Table("ttable"); err != nil {
+			fmt.Println("Table", err)
+		} else {
+			fmt.Println(table)
+		}
+
+		fmt.Println("\nFunction", "fn_query")
+		if fn, err := db.Function("fn_query"); err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(fn)
+		}
+	}
+
+
+## More examples
+
+*[mysql](https://github.com/sdming/kdb/blob/master/example/mysql.go)  
+*[postgres](https://github.com/sdming/kdb/blob/master/example/postgres.go)  
+
 
 ## Driver
 
-*Mysql: github.com/Go-SQL-Driver/MySQL 
-*PostgreSQL: github.com/bmizerany/pq  
-*SQLite: github.com/mattn/go-sqlite3  
-*Oracle: github.com/mattn/go-oci8  
-*Odbc: https://code.google.com/p/odbc 
+*Mysql: github.com/Go-SQL-Driver/MySQL     
+*PostgreSQL: github.com/bmizerany/pq    
+*SQLite: github.com/mattn/go-sqlite3    
+*Oracle: github.com/mattn/go-oci8    
+*Odbc: https://code.google.com/p/odbc  
 
 ## TODO  
 

@@ -75,6 +75,9 @@ func GetSchemaer(driver string) (Schemaer, error) {
 
 // Dialecter is interface of sql dialect
 type Dialecter interface {
+	// Name return mysql,postgres,oracle,mssql,sqlite,...
+	Name() string
+
 	// SupportNamedParameter, like @para1
 	SupportNamedParameter() bool
 
@@ -83,6 +86,9 @@ type Dialecter interface {
 
 	// ParameterPlaceHolder, like ?, $, @
 	ParameterPlaceHolder() string
+
+	// QuoteString quote s as sql native string 
+	QuoteString(s string) string
 
 	// Quote quote object name, like 'table', [table]
 	Quote(string) string
@@ -131,6 +137,11 @@ func DefaultDialecter() Dialecter {
 type AnsiDialecter struct {
 }
 
+// Name return "ansi"
+func (ad AnsiDialecter) Name() string {
+	return "ansi"
+}
+
 // SupportNamedParameter return false
 func (ad AnsiDialecter) SupportNamedParameter() bool {
 	return false
@@ -146,9 +157,14 @@ func (ad AnsiDialecter) ParameterPlaceHolder() string {
 	return " ? "
 }
 
-// Quote quote s as 's'
-func (ad AnsiDialecter) Quote(s string) string {
+// QuoteString quote s as sql native string 
+func (ad AnsiDialecter) QuoteString(s string) string {
 	return "'" + s + "'"
+}
+
+// Quote quote s as "s"
+func (ad AnsiDialecter) Quote(s string) string {
+	return "\"" + s + "\""
 }
 
 // Table return ""
@@ -177,7 +193,7 @@ func (ad AnsiDialecter) DbType(nativeType string) ansi.DbType {
 		return ansi.String
 	case "char", "character", "nchar", "varchar", "nvarchar", "string", "longvarchar", "longchar", "varyingcharacter":
 		return ansi.String
-	case "nativecharacter", "nativevaryingcharacter", "":
+	case "nativecharacter", "nativevaryingcharacter", "character varying":
 		return ansi.String
 	case "bit", "bool", "boolean", "yesno", "logical":
 		return ansi.Boolean
@@ -185,23 +201,25 @@ func (ad AnsiDialecter) DbType(nativeType string) ansi.DbType {
 		return ansi.Int
 	case "tinyint", "smallint", "int", "mediumint", "bigint", "int16", "int32", "int64", "integer", "long":
 		return ansi.Int
+	case "bigserial", "serial", "smallserial":
+		return ansi.Int
 	case "identity", "counter", "autoincrement":
 		return ansi.Int
 	case "decimal", "newdecimal", "numeric":
 		return ansi.Numeric
 	case "currency", "money", "smallmoney":
 		return ansi.Numeric
-	case "float", "real", "double":
+	case "float", "real", "double", "double precision":
 		return ansi.Float
 	case "date", "smalldate":
 		return ansi.Date
-	case "time", "datetime", "datetime2", "smalldatetime":
+	case "time", "datetime", "datetime2", "smalldatetime", "timestamp", "timestamp without time zone", "timestamp with time zone":
 		return ansi.DateTime
 	case "year":
 		return ansi.Int
-	case "image", "timestamp", "varbinary", "binary", "blob", "tinyblob", "mediumblob", "longblob", "oleobject", "general":
+	case "image", "varbinary", "binary", "blob", "tinyblob", "mediumblob", "longblob", "oleobject", "general", "bit varying", "bytea":
 		return ansi.Bytes
-	case "uniqueidentifier", "guid":
+	case "uniqueidentifier", "guid", "uuid":
 		return ansi.Guid
 	default:
 		return ansi.Var
@@ -211,6 +229,21 @@ func (ad AnsiDialecter) DbType(nativeType string) ansi.DbType {
 // MysqlDialecter is Mysql dialect
 type MysqlDialecter struct {
 	AnsiDialecter
+}
+
+// Name return "mysql"
+func (mysql MysqlDialecter) Name() string {
+	return "mysql"
+}
+
+// QuoteString quote s as sql native string 
+func (mysql MysqlDialecter) QuoteString(s string) string {
+	return "\"" + s + "\""
+}
+
+// Quote quote s as 's'
+func (mysql MysqlDialecter) Quote(s string) string {
+	return "'" + s + "'"
 }
 
 // Table return sql to query table schema
@@ -242,6 +275,11 @@ type PostgreSQLDialecter struct {
 	AnsiDialecter
 }
 
+// Name return "postgres"
+func (pgsql PostgreSQLDialecter) Name() string {
+	return "postgres"
+}
+
 // SupportIndexedParameter regturn true
 func (pgsql PostgreSQLDialecter) SupportIndexedParameter() bool {
 	return true
@@ -250,6 +288,91 @@ func (pgsql PostgreSQLDialecter) SupportIndexedParameter() bool {
 // ParameterPlaceHolder return $
 func (pgsql PostgreSQLDialecter) ParameterPlaceHolder() string {
 	return "$"
+}
+
+// QuoteString quote s as sql native string 
+func (pgsql PostgreSQLDialecter) QuoteString(s string) string {
+	return "'" + s + "'"
+}
+
+// Quote quote s as 's'
+func (pgsql PostgreSQLDialecter) Quote(s string) string {
+	return "\"" + s + "\""
+}
+
+// Table return sql to query table schema
+func (pgsql PostgreSQLDialecter) Table(name string) string {
+	// http://www.postgresql.org/docs/9.2/static/infoschema-tables.html
+	return fmt.Sprintf(`
+select 
+	table_catalog as "catalog", 
+	table_schema as "schema", 
+	table_name as "name", 
+	table_type as "type" 
+from 
+	information_schema.tables 
+where 
+	table_name = '%s' 
+	and table_schema = current_schema() 
+	and table_schema not in ('pg_catalog', 'information_schema'); `, name)
+}
+
+// Columns return sql to query table columns schema
+func (pgsql PostgreSQLDialecter) Columns(name string) string {
+	// http://www.postgresql.org/docs/9.2/static/infoschema-columns.html
+	return fmt.Sprintf(`
+select 
+	column_name as "name", 
+	ordinal_position as "position", 
+	case is_nullable when 'YES' then true else false end as "nullable", 
+	data_type as "datatype",
+	COALESCE(character_maximum_length,0) as "length", 
+	COALESCE(numeric_precision,0) as "precision", 
+	COALESCE(numeric_scale,0) as "scale",
+	case when pg_get_serial_sequence(table_name, column_name) is null then false else true end as "autoincrement",
+	case is_updatable when 'YES' then false else true end as "readonly",
+	case when exists (
+		select 
+			kc.column_name 
+		from  
+			information_schema.table_constraints tc,  
+			information_schema.key_column_usage kc  
+		where 
+			kc.table_name = c.table_name and kc.table_schema =c.table_schema and kc.column_name = c.column_name
+			and tc.constraint_type = 'PRIMARY KEY' 
+			and kc.table_name = tc.table_name and kc.table_schema = tc.table_schema and kc.constraint_name = tc.constraint_name
+			
+	) then true else false end as "primarykey"
+ from 
+	information_schema.columns  c
+ where 
+	table_name = '%s' 
+	and table_schema = current_schema()
+ order by 
+	ordinal_position ;
+`, name)
+}
+
+// Function return sql to query procedure schema
+func (pgsql PostgreSQLDialecter) Function(name string) string {
+	//http://www.postgresql.org/docs/9.2/static/infoschema-routines.html
+	return fmt.Sprintf(`select routine_catalog as "catalog", routine_schema as "schema", routine_name as "name" from information_schema.routines where routine_name = '%s' and routine_schema = current_schema() ;`, name)
+}
+
+// Parameters return sql to query procedure paramters schema
+func (pgsql PostgreSQLDialecter) Parameters(name string) string {
+	return fmt.Sprintf(`
+select 
+	p.parameter_name as "name", p.ordinal_position as "position", p.parameter_mode as "dirmode", p.data_type as "datatype", COALESCE(p.character_maximum_length,0) as "length", COALESCE(p.numeric_precision,0) as "precision", COALESCE(p.numeric_scale,0) as "scale" 
+from 
+	information_schema.parameters p,
+	information_schema.routines r
+where
+	p.specific_catalog = r.specific_catalog and p.specific_schema = r. specific_schema and p.specific_name = r.specific_name
+	and r.routine_name = '%s' and r.routine_schema = current_schema()
+order by 
+	ordinal_position ;
+`, name)
 }
 
 // AnsiDriver is ansi sql compiler
@@ -359,12 +482,7 @@ func (c *AnsiDriver) compileText(text *Text, source string) (query string, args 
 	return
 }
 
-func (c *AnsiDriver) compileProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
-	if sp == nil || sp.Name == "" {
-		err = errors.New("procedure is nil or name of procedure is empty")
-		return
-	}
-
+func (c *AnsiDriver) compileMysqlProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
 	l := len(sp.Parameters)
 	paramters := make([]interface{}, 0, l)
 	buffer := &sqlWriter{}
@@ -422,6 +540,56 @@ func (c *AnsiDriver) compileProcedure(sp *Procedure, source string) (query strin
 
 	query = buffer.String()
 	args = paramters
+	return
+}
+
+func (c *AnsiDriver) compilePostgresProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
+	l := len(sp.Parameters)
+	paramters := make([]interface{}, 0, l)
+	w := &sqlWriter{}
+	index := 1
+
+	w.WriteString("SELECT * FROM ")
+	w.WriteString(sp.Name)
+	w.OpenParentheses()
+
+	for i := 0; i < l; i++ {
+		p := sp.Parameters[i]
+		if p.IsIn() {
+			if index > 1 {
+				w.Comma()
+			}
+
+			w.WriteString(c.Dialecter.ParameterPlaceHolder())
+			w.WriteString(strconv.Itoa(index))
+			paramters = append(paramters, p.Value)
+			index++
+		}
+	}
+
+	w.CloseParentheses()
+	w.WriteString(ansi.StatementSplit)
+
+	query = w.String()
+	args = paramters
+	fmt.Print(query)
+	fmt.Print(args)
+	return
+}
+
+func (c *AnsiDriver) compileProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
+	if sp == nil || sp.Name == "" {
+		err = errors.New("procedure is nil or name of procedure is empty")
+		return
+	}
+
+	switch c.Dialecter.Name() {
+	case "mysql":
+		return c.compileMysqlProcedure(sp, source)
+	case "postgres":
+		return c.compilePostgresProcedure(sp, source)
+	}
+	err = errors.New("driver dones't support procedure:" + c.Dialecter.Name())
 	return
 }
 
