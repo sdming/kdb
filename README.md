@@ -27,6 +27,32 @@ Go 1.1+
 
 go get github.com/sdming/kdb 
 
+## Register
+
+Need to call RegisterDialecter/RegisterCompiler to bind your sql driver to a kdb.Dialecter and kdb.Compiler.  
+
+example :
+
+
+	func init() {
+		RegisterDialecter("ansi", AnsiDialecter{})
+		RegisterCompiler("ansi", DefaultSQL())
+
+		RegisterDialecter("mysql", MysqlDialecter{})
+		RegisterCompiler("mysql", MySql())
+
+		RegisterDialecter("postgres", PostgreSQLDialecter{})
+		RegisterCompiler("postgres", PostgreSQL())
+
+		RegisterDialecter("adodb", MssqlDialecter{})
+		RegisterCompiler("adodb", MSSQL())
+
+		RegisterDialecter("lodbc", MssqlDialecter{})
+		RegisterCompiler("lodbc", MSSQL())
+	}
+
+
+go get github.com/sdming/kdb 
 
 ## Example 
 
@@ -265,10 +291,10 @@ go get github.com/sdming/kdb
 
 ## Driver
 
-*Mysql: github.com/Go-SQL-Driver/MySQL     
-*PostgreSQL: github.com/bmizerany/pq    
-*SQLite: github.com/mattn/go-sqlite3    
-*Oracle: github.com/mattn/go-oci8    
+*Mysql: https://github.com/Go-SQL-Driver/MySQL     
+*PostgreSQL: https://github.com/bmizerany/pq    
+*SQLite: https://github.com/mattn/go-sqlite3    
+*Oracle: https://github.com/mattn/go-oci8    
 *Odbc: https://code.google.com/p/odbc  
 
 ## TODO  

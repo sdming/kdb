@@ -62,6 +62,23 @@ func FormatSqlValue(dbType ansi.DbType, v interface{}) string {
 	panic("FormatSqlValue")
 }
 
+func nativeType(p ansi.DbParameter) string {
+	if p.DbType.IsBoolean() || p.DbType.IsInteger() || p.DbType.IsDateTime() {
+		return p.NativeType
+	}
+	if p.DbType.HasPrecisionAndScale() {
+		return fmt.Sprintf("%s(%d,%d", p.NativeType, p.Precision, p.Scale)
+	}
+	if p.DbType.HasLength() {
+		if p.Size > 0 {
+			return fmt.Sprintf("%s(%d)", p.NativeType, p.Size)
+		} else {
+			return fmt.Sprintf("%s(max)", p.NativeType)
+		}
+	}
+	return p.NativeType
+}
+
 func scanScalar(rows *sql.Rows, v interface{}) (err error) {
 	if rows == nil {
 		return errors.New("rows is nil")
@@ -168,6 +185,7 @@ func DumpRows(rows *sql.Rows) string {
 		buf.WriteString(fmt.Sprintln("rows columns error:", err))
 		return buf.String()
 	}
+	fmt.Println(columns)
 	buf.WriteString(fmt.Sprintln("rows", columns))
 	count := 0
 

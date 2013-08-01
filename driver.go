@@ -2,7 +2,7 @@ package kdb
 
 import (
 	"bytes"
-	"database/sql"
+	_ "database/sql"
 	"errors"
 	"fmt"
 	"github.com/sdming/kdb/ansi"
@@ -11,14 +11,18 @@ import (
 	"strings"
 )
 
-// Queryer is a interface that query expression
-type Queryer interface {
-	Query(source string, exp Expression) (sql.Rows, error)
-}
+// // Queryer is a interface that query expression
+// type Queryer interface {
+// 	Query(source string, exp Expression) (sql.Rows, error)
+// }
 
-// Execer is a interface that execute expression
-type Execer interface {
-	Exec(source string, exp Expression) (sql.Result, error)
+// // Execer is a interface that execute expression
+// type Execer interface {
+// 	Exec(source string, exp Expression) (sql.Result, error)
+// }
+
+type Driver interface {
+	Compiler
 }
 
 // Compiler is a interface that compile expression to native sql & args
@@ -226,6 +230,65 @@ func (ad AnsiDialecter) DbType(nativeType string) ansi.DbType {
 	}
 }
 
+// MssqlDialecter is ms sql server dialect
+type MssqlDialecter struct {
+	AnsiDialecter
+}
+
+// Name return "mssql"
+func (mssql MssqlDialecter) Name() string {
+	return "mssql"
+}
+
+// Quote quote s as [s]
+func (mssql MssqlDialecter) Quote(s string) string {
+	return "[" + s + "]"
+}
+
+// Table return sql to query table schema
+func (mssql MssqlDialecter) Table(name string) string {
+	return fmt.Sprintf("SELECT TABLE_CATALOG AS [catalog], TABLE_SCHEMA AS [schema], TABLE_NAME AS [name], TABLE_TYPE AS [type] FROM information_schema.[TABLES] WHERE TABLE_NAME = '%s' ", name)
+}
+
+// Columns return sql to query table columns schema
+func (mssql MssqlDialecter) Columns(name string) string {
+	return fmt.Sprintf(`
+select c.[name], c.column_id as [position], c.is_nullable as [nullable], 
+t.name as [datatype],
+c.max_length as [length],
+c.[precision],
+c.[scale],
+c.is_identity as [autoincrement],
+case when (c.is_identity = 1 or c.is_computed = 1) then 1 else 0 end as [readonly],
+isnull(ict.primarykey,0) AS [primarykey]
+from 
+	sys.columns c
+	inner join sys.types t on c.user_type_id = t.user_type_id
+	left join 
+	(
+		select ic.column_id, 1 primarykey
+		from sys.indexes i
+		inner join  sys.index_columns ic on i.object_id = ic.object_id and i.index_id = ic.index_id 
+		where i.object_id = object_id('%s') and i.is_primary_key = 1
+	)  as ict on c.column_id = ict.column_id
+where
+	c.object_id = object_id('%s')
+order by 
+	c.column_id
+	;
+`, name, name)
+}
+
+// Function return sql to query procedure schema
+func (mssql MssqlDialecter) Function(name string) string {
+	return fmt.Sprintf("SELECT ROUTINE_CATALOG AS [catalog], ROUTINE_SCHEMA AS [schema], ROUTINE_NAME as [name] FROM information_schema.ROUTINES WHERE ROUTINE_NAME = '%s' ;", name)
+}
+
+// Parameters return sql to query procedure paramters schema
+func (mssql MssqlDialecter) Parameters(name string) string {
+	return fmt.Sprintf("SELECT Substring(PARAMETER_NAME,2,len(PARAMETER_NAME)-1) as [name], ORDINAL_POSITION as [position], PARAMETER_MODE as [dirmode], DATA_TYPE as [datatype],ISNULL(CHARACTER_MAXIMUM_LENGTH,0) as [length], ISNULL(NUMERIC_PRECISION,0) as [precision], ISNULL(NUMERIC_SCALE,0) as [scale] FROM information_schema.PARAMETERS WHERE SPECIFIC_NAME = '%s' ORDER BY ORDINAL_POSITION", name)
+}
+
 // MysqlDialecter is Mysql dialect
 type MysqlDialecter struct {
 	AnsiDialecter
@@ -375,18 +438,18 @@ order by
 `, name)
 }
 
-// AnsiDriver is ansi sql compiler
-type AnsiDriver struct {
+// SqlDriver is ansi sql compiler
+type SqlDriver struct {
 	Dialecter Dialecter
 }
 
-// NewAnsiDriver return a AnsiDriver
-func NewAnsiDriver(dialecter Dialecter) Compiler {
-	return &AnsiDriver{Dialecter: dialecter}
+// NewSqlDriver return a SqlDriver
+func NewSqlDriver(dialecter Dialecter) Compiler {
+	return &SqlDriver{Dialecter: dialecter}
 }
 
 // Compile compile expression to ansi sql
-func (c *AnsiDriver) Compile(source string, exp Expression) (query string, args []interface{}, err error) {
+func (c *SqlDriver) Compile(source string, exp Expression) (query string, args []interface{}, err error) {
 	if exp == nil {
 		err = errors.New("compile expression is nil")
 		return
@@ -400,14 +463,14 @@ func (c *AnsiDriver) Compile(source string, exp Expression) (query string, args 
 		p, _ := exp.(*Procedure)
 		return c.compileProcedure(p, source)
 	case NodeQuery, NodeUpdate, NodeInsert, NodeDelete:
-		return NewStatementCompiler(c.Dialecter).Compile(exp, source)
+		return NewStmtCompiler(c.Dialecter).Compile(exp, source)
 	}
 
 	err = errors.New(fmt.Sprint("compile expression does support type:", exp.Node()))
 	return
 }
 
-func (c *AnsiDriver) compileText(text *Text, source string) (query string, args []interface{}, err error) {
+func (c *SqlDriver) compileText(text *Text, source string) (query string, args []interface{}, err error) {
 	if text == nil || text.Sql == "" {
 		err = errors.New("text is nil or sql of text is empty")
 		return
@@ -482,7 +545,7 @@ func (c *AnsiDriver) compileText(text *Text, source string) (query string, args 
 	return
 }
 
-func (c *AnsiDriver) compileMysqlProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
+func (c *SqlDriver) compileMysqlProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
 	l := len(sp.Parameters)
 	paramters := make([]interface{}, 0, l)
 	buffer := &sqlWriter{}
@@ -543,7 +606,91 @@ func (c *AnsiDriver) compileMysqlProcedure(sp *Procedure, source string) (query 
 	return
 }
 
-func (c *AnsiDriver) compilePostgresProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
+//exec sp_executesql N'update ttable set cdatetime=getdate() where cint >  @P1 ',N'@P1 bigint',42
+
+func (c *SqlDriver) compileMssqlProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
+	l := len(sp.Parameters)
+	paramters := make([]interface{}, 0, l)
+	split := false
+	w := &sqlWriter{}
+
+	if !sp.HasOutParameter() {
+		w.Print("exec ", sp.Name, " ")
+
+		for i := 0; i < l; i++ {
+			p := sp.Parameters[i]
+			if p.Dir == ansi.DirReturn {
+				continue
+			}
+			if split {
+				w.Comma()
+			}
+			split = true
+			w.WriteString("?")
+			paramters = append(paramters, p.Value)
+		}
+
+		query = w.String()
+		args = paramters
+		return
+	}
+
+	for i := 0; i < l; i++ {
+		p := sp.Parameters[i]
+		if p.IsOut() {
+			w.Print("declare @kdbp", strconv.Itoa(i), " int\n")
+			w.Print("set @kdbp", strconv.Itoa(i), "= ?\n")
+			paramters = append(paramters, p.Value)
+		}
+	}
+
+	split = false
+	w.Print("exec ", sp.Name, " ")
+	for i := 0; i < l; i++ {
+		p := sp.Parameters[i]
+		if p.Dir == ansi.DirReturn {
+			continue
+		}
+		if split {
+			w.Comma()
+		}
+		split = true
+		if p.Dir == ansi.DirIn {
+			w.Print("@", p.Name, "=? ")
+			paramters = append(paramters, p.Value)
+		} else {
+			w.Print("@", p.Name, "=@kdbp", strconv.Itoa(i), " output")
+		}
+	}
+
+	split = false
+	w.LineBreak()
+	w.WriteString("select ")
+	for i := 0; i < l; i++ {
+		p := sp.Parameters[i]
+
+		if p.IsOut() {
+			if split {
+				w.Comma()
+			}
+			split = true
+			w.Print("@kdbp", strconv.Itoa(i))
+		}
+	}
+
+	// declare @p2 int
+	// set @p2=4
+	// declare @p3 int
+	// set @p3=3
+	// exec usp_inout @x=1,@y=@p2 output,@sum=@p3 output
+	// select @p2, @p3
+	query = w.String()
+	args = paramters
+	fmt.Print(query)
+	return
+}
+
+func (c *SqlDriver) compilePostgresProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
 	l := len(sp.Parameters)
 	paramters := make([]interface{}, 0, l)
 	w := &sqlWriter{}
@@ -572,12 +719,10 @@ func (c *AnsiDriver) compilePostgresProcedure(sp *Procedure, source string) (que
 
 	query = w.String()
 	args = paramters
-	fmt.Print(query)
-	fmt.Print(args)
 	return
 }
 
-func (c *AnsiDriver) compileProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
+func (c *SqlDriver) compileProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
 	if sp == nil || sp.Name == "" {
 		err = errors.New("procedure is nil or name of procedure is empty")
 		return
@@ -588,13 +733,15 @@ func (c *AnsiDriver) compileProcedure(sp *Procedure, source string) (query strin
 		return c.compileMysqlProcedure(sp, source)
 	case "postgres":
 		return c.compilePostgresProcedure(sp, source)
+	case "mssql":
+		return c.compileMssqlProcedure(sp, source)
 	}
 	err = errors.New("driver dones't support procedure:" + c.Dialecter.Name())
 	return
 }
 
-// StatementCompiler can compile Update, Insert, Delete, Query
-type StatementCompiler struct {
+// StmtCompiler can compile Update, Insert, Delete, Query
+type StmtCompiler struct {
 	// Dialecter is a provided Dialecter
 	Dialecter   Dialecter
 	exp         Expression
@@ -605,16 +752,16 @@ type StatementCompiler struct {
 	placeHolder string
 }
 
-// NewStatementCompiler return  *StatementCompiler with provided Dialecter
-func NewStatementCompiler(dialecter Dialecter) *StatementCompiler {
-	return &StatementCompiler{
+// NewStmtCompiler return  *StmtCompiler with provided Dialecter
+func NewStmtCompiler(dialecter Dialecter) *StmtCompiler {
+	return &StmtCompiler{
 		Dialecter: dialecter,
 		args:      make([]interface{}, 0, _defaultCapicity),
 	}
 }
 
 // Compile compile expression to ansi sql
-func (sc *StatementCompiler) Compile(exp Expression, source string) (query string, args []interface{}, err error) {
+func (sc *StmtCompiler) Compile(exp Expression, source string) (query string, args []interface{}, err error) {
 	if exp == nil {
 		err = errors.New("compile expression is nil")
 	}
@@ -646,11 +793,11 @@ func (sc *StatementCompiler) Compile(exp Expression, source string) (query strin
 	return
 }
 
-func (sc *StatementCompiler) writeQuote(s string) {
+func (sc *StmtCompiler) writeQuote(s string) {
 	sc.w.WriteString(sc.Dialecter.Quote(s))
 }
 
-func (sc *StatementCompiler) visitExp(exp Expression) {
+func (sc *StmtCompiler) visitExp(exp Expression) {
 	if exp == nil {
 		return
 	}
@@ -668,8 +815,6 @@ func (sc *StatementCompiler) visitExp(exp Expression) {
 		sc.w.WriteString(sql.ToSql())
 		return
 	}
-
-	//TODO: IN/ NOT IN
 
 	switch exp := exp.(type) {
 	case *Insert:
@@ -715,7 +860,7 @@ func (sc *StatementCompiler) visitExp(exp Expression) {
 	}
 }
 
-func (sc *StatementCompiler) visitAggregate(a *Aggregate) {
+func (sc *StmtCompiler) visitAggregate(a *Aggregate) {
 	if a == nil || a.Exp == nil || a.Name == "" {
 		return
 	}
@@ -726,7 +871,7 @@ func (sc *StatementCompiler) visitAggregate(a *Aggregate) {
 	sc.w.CloseParentheses()
 }
 
-func (sc *StatementCompiler) writeValue(v interface{}) {
+func (sc *StmtCompiler) writeValue(v interface{}) {
 	if v == nil {
 		sc.w.WriteString(ansi.Null)
 		return
@@ -759,7 +904,7 @@ func (sc *StatementCompiler) writeValue(v interface{}) {
 
 }
 
-func (sc *StatementCompiler) visitValue(v *Value) {
+func (sc *StmtCompiler) visitValue(v *Value) {
 	if v == nil || v.Value == nil {
 		sc.w.WriteString(ansi.Null)
 		return
@@ -767,7 +912,7 @@ func (sc *StatementCompiler) visitValue(v *Value) {
 	sc.writeValue(v.Value)
 }
 
-func (sc *StatementCompiler) visitColumn(c Column) {
+func (sc *StmtCompiler) visitColumn(c Column) {
 	sc.w.WriteString(c.String())
 
 	// table, column := c.Split()
@@ -780,7 +925,7 @@ func (sc *StatementCompiler) visitColumn(c Column) {
 	// }
 
 }
-func (sc *StatementCompiler) visitTable(t *Table) {
+func (sc *StmtCompiler) visitTable(t *Table) {
 	if t == nil || (t.Name == "" && t.Alias == "") {
 		return
 	} else if t.Name != "" && t.Alias != "" {
@@ -794,7 +939,7 @@ func (sc *StatementCompiler) visitTable(t *Table) {
 	return
 }
 
-func (sc *StatementCompiler) visitCondition(c *Condition) {
+func (sc *StmtCompiler) visitCondition(c *Condition) {
 	if c == nil {
 		return
 	}
@@ -819,7 +964,7 @@ func (sc *StatementCompiler) visitCondition(c *Condition) {
 	}
 }
 
-func (sc *StatementCompiler) visitIn(c *Condition) {
+func (sc *StmtCompiler) visitIn(c *Condition) {
 	sc.visitExp(c.Left)
 	sc.w.Print(" ", c.Op.String(), " ")
 
@@ -836,7 +981,7 @@ func (sc *StatementCompiler) visitIn(c *Condition) {
 	sc.w.CloseParentheses()
 }
 
-func (sc *StatementCompiler) visitSlice(v interface{}) {
+func (sc *StmtCompiler) visitSlice(v interface{}) {
 	switch v := v.(type) {
 	case []int:
 		for i := 0; i < len(v); i++ {
@@ -899,7 +1044,7 @@ func (sc *StatementCompiler) visitSlice(v interface{}) {
 	}
 }
 
-func (sc *StatementCompiler) visitConditions(c *Conditions) {
+func (sc *StmtCompiler) visitConditions(c *Conditions) {
 	if c == nil {
 		return
 	}
@@ -933,7 +1078,7 @@ func (sc *StatementCompiler) visitConditions(c *Conditions) {
 	sc.w.Blank()
 }
 
-func (sc *StatementCompiler) visitJoin(j *Join) {
+func (sc *StmtCompiler) visitJoin(j *Join) {
 	if j == nil {
 		return
 	}
@@ -954,7 +1099,7 @@ func (sc *StatementCompiler) visitJoin(j *Join) {
 
 }
 
-func (sc *StatementCompiler) visitFrom(f *From) {
+func (sc *StmtCompiler) visitFrom(f *From) {
 	if f == nil {
 		return
 	}
@@ -982,7 +1127,7 @@ func (sc *StatementCompiler) visitFrom(f *From) {
 	sc.w.Blank()
 }
 
-func (sc *StatementCompiler) visitWhere(where *Where) {
+func (sc *StmtCompiler) visitWhere(where *Where) {
 	if where == nil || where.isEmpty() {
 		return
 	}
@@ -990,7 +1135,7 @@ func (sc *StatementCompiler) visitWhere(where *Where) {
 	sc.visitConditions(where.Conditions)
 }
 
-func (sc *StatementCompiler) visitField(f *Field) {
+func (sc *StmtCompiler) visitField(f *Field) {
 	if f == nil {
 		return
 	}
@@ -1002,7 +1147,7 @@ func (sc *StatementCompiler) visitField(f *Field) {
 	}
 }
 
-func (sc *StatementCompiler) visitSelect(slt *Select) {
+func (sc *StmtCompiler) visitSelect(slt *Select) {
 	if slt == nil || len(slt.Fields) == 0 {
 		sc.w.WriteString(ansi.WildcardAll)
 		return
@@ -1021,7 +1166,7 @@ func (sc *StatementCompiler) visitSelect(slt *Select) {
 	sc.w.Blank()
 }
 
-func (sc *StatementCompiler) visitHaving(having *Having) {
+func (sc *StmtCompiler) visitHaving(having *Having) {
 	if having == nil {
 		return
 	}
@@ -1034,7 +1179,7 @@ func (sc *StatementCompiler) visitHaving(having *Having) {
 	sc.visitConditions(having.Conditions)
 }
 
-func (sc *StatementCompiler) visitGroupBy(groupBy *GroupBy) {
+func (sc *StmtCompiler) visitGroupBy(groupBy *GroupBy) {
 	if groupBy == nil {
 		return
 	}
@@ -1060,7 +1205,7 @@ func (sc *StatementCompiler) visitGroupBy(groupBy *GroupBy) {
 	sc.w.Blank()
 }
 
-func (sc *StatementCompiler) visitOrderBy(orderBy *OrderBy) {
+func (sc *StmtCompiler) visitOrderBy(orderBy *OrderBy) {
 	if orderBy == nil {
 		return
 	}
@@ -1088,7 +1233,7 @@ func (sc *StatementCompiler) visitOrderBy(orderBy *OrderBy) {
 	sc.w.Blank()
 }
 
-func (sc *StatementCompiler) visitQuery(exp Expression) {
+func (sc *StmtCompiler) visitQuery(exp Expression) {
 	query, _ := exp.(*Query)
 
 	sc.w.WriteString(ansi.Select)
@@ -1117,7 +1262,7 @@ func (sc *StatementCompiler) visitQuery(exp Expression) {
 
 }
 
-func (sc *StatementCompiler) visitInsert(exp Expression) {
+func (sc *StmtCompiler) visitInsert(exp Expression) {
 	insert, _ := exp.(*Insert)
 
 	sc.w.Print(ansi.InsertInto, ansi.Blank, insert.Table.Name)
@@ -1150,7 +1295,7 @@ func (sc *StatementCompiler) visitInsert(exp Expression) {
 	sc.w.WriteString(ansi.StatementSplit)
 }
 
-func (sc *StatementCompiler) visitUpdate(exp Expression) {
+func (sc *StmtCompiler) visitUpdate(exp Expression) {
 	u, _ := exp.(*Update)
 
 	sc.w.PrintSplit(ansi.Blank, ansi.Update, u.Table.Name, ansi.Set, ansi.LineBreak)
@@ -1175,7 +1320,7 @@ func (sc *StatementCompiler) visitUpdate(exp Expression) {
 
 }
 
-func (sc *StatementCompiler) visitDelete(exp Expression) {
+func (sc *StmtCompiler) visitDelete(exp Expression) {
 	d, _ := exp.(*Delete)
 
 	sc.w.PrintSplit(ansi.Blank, ansi.Delete, ansi.From, d.Table.Name)
@@ -1189,16 +1334,35 @@ func (sc *StatementCompiler) visitDelete(exp Expression) {
 
 }
 
+func MySql() Driver {
+	return NewSqlDriver(MysqlDialecter{})
+}
+
+func PostgreSQL() Driver {
+	return NewSqlDriver(PostgreSQLDialecter{})
+}
+
+func DefaultSQL() Driver {
+	return NewSqlDriver(AnsiDialecter{})
+}
+
+func MSSQL() Driver {
+	return NewSqlDriver(MssqlDialecter{})
+}
+
 func init() {
-	ansi := AnsiDialecter{}
-	RegisterDialecter("ansi", ansi)
-	RegisterCompiler("ansi", NewAnsiDriver(ansi))
+	RegisterDialecter("ansi", AnsiDialecter{})
+	RegisterCompiler("ansi", DefaultSQL())
 
-	mysql := MysqlDialecter{}
-	RegisterDialecter("mysql", mysql)
-	RegisterCompiler("mysql", NewAnsiDriver(mysql))
+	RegisterDialecter("mysql", MysqlDialecter{})
+	RegisterCompiler("mysql", MySql())
 
-	postgres := PostgreSQLDialecter{}
-	RegisterDialecter("postgres", postgres)
-	RegisterCompiler("postgres", NewAnsiDriver(postgres))
+	RegisterDialecter("postgres", PostgreSQLDialecter{})
+	RegisterCompiler("postgres", PostgreSQL())
+
+	RegisterDialecter("adodb", MssqlDialecter{})
+	RegisterCompiler("adodb", MSSQL())
+
+	RegisterDialecter("lodbc", MssqlDialecter{})
+	RegisterCompiler("lodbc", MSSQL())
 }

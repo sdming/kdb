@@ -99,3 +99,8 @@ func (t DbType) IsString() bool {
 func (t DbType) HasPrecisionAndScale() bool {
 	return t == Float || t == Numeric
 }
+
+// HasLength return true if t is string or bytes
+func (t DbType) HasLength() bool {
+	return t == String || t == Bytes
+}
