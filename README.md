@@ -285,7 +285,7 @@ example :
 
 *[mysql](https://github.com/sdming/kdb/blob/master/example/mysql.go)  
 *[postgres](https://github.com/sdming/kdb/blob/master/example/postgres.go)  
-
+*[mssql](https://github.com/sdming/kdb/blob/master/example/mssql.go)  
 
 ## Driver
 
