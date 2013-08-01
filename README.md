@@ -52,8 +52,6 @@ example :
 	}
 
 
-go get github.com/sdming/kdb 
-
 ## Example 
 
 	func basic() {
@@ -291,17 +289,17 @@ go get github.com/sdming/kdb
 
 ## Driver
 
-*Mysql: https://github.com/Go-SQL-Driver/MySQL     
-*PostgreSQL: https://github.com/bmizerany/pq    
-*SQLite: https://github.com/mattn/go-sqlite3    
+*Mysql: https://github.com/Go-SQL-Driver/MySQL       
+*PostgreSQL: https://github.com/bmizerany/pq      
+*lodbc: https://github.com/LukeMauldin/lodbc   
+*SQLite: https://github.com/mattn/go-sqlite3      
 *Oracle: https://github.com/mattn/go-oci8    
-*Odbc: https://code.google.com/p/odbc  
+
 
 ## TODO  
 
 * ORM  
-* Store procedure output parameter 
-* mssql, postgresql, oracle, sqlite  
+* oracle, sqlite  
 
 ## License
 
