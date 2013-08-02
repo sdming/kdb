@@ -101,12 +101,19 @@ func (db *DB) dialecter() (dialect Dialecter, err error) {
 
 // Function return schema of store procedure
 func (db *DB) Function(name string) (fn *ansi.DbFunction, err error) {
+	if err := db.Open(); err != nil {
+		return nil, err
+	}
+
 	var dialect Dialecter
 	if dialect, err = db.dialecter(); err != nil {
 		return
 	}
-	query := dialect.Function(name)
+	query := dialect.FunctionSql(name)
 	if query == "" {
+		if schm, ok := dialect.(Schemaer); ok {
+			return schm.Function(db.innerdb, name)
+		}
 		err = errors.New("driver doesn't support function schema:" + db.DSN.Driver)
 		return
 	}
@@ -135,7 +142,7 @@ func (db *DB) Function(name string) (fn *ansi.DbFunction, err error) {
 		return
 	}
 
-	query = dialect.Parameters(name)
+	query = dialect.ParametersSql(name)
 	if query == "" {
 		err = errors.New("driver doesn't support function parameters schema:" + db.DSN.Driver)
 		return
@@ -175,12 +182,19 @@ func (db *DB) Function(name string) (fn *ansi.DbFunction, err error) {
 
 // Table return schema of table,view
 func (db *DB) Table(name string) (table *ansi.DbTable, err error) {
+	if err := db.Open(); err != nil {
+		return nil, err
+	}
+
 	var dialect Dialecter
 	if dialect, err = db.dialecter(); err != nil {
 		return
 	}
-	query := dialect.Table(name)
+	query := dialect.TableSql(name)
 	if query == "" {
+		if schm, ok := dialect.(Schemaer); ok {
+			return schm.Table(db.innerdb, name)
+		}
 		err = errors.New("driver doesn't support table schema:" + db.DSN.Driver)
 		return
 	}
@@ -209,7 +223,7 @@ func (db *DB) Table(name string) (table *ansi.DbTable, err error) {
 		return
 	}
 
-	query = dialect.Columns(name)
+	query = dialect.ColumnsSql(name)
 	if query == "" {
 		err = errors.New("driver doesn't support columns schema:" + db.DSN.Driver)
 		return

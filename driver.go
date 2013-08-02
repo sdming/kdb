@@ -2,7 +2,7 @@ package kdb
 
 import (
 	"bytes"
-	_ "database/sql"
+	"database/sql"
 	"errors"
 	"fmt"
 	"github.com/sdming/kdb/ansi"
@@ -52,10 +52,10 @@ func GetCompiler(driver string) (Compiler, error) {
 // Schemaer is a interface that get schema of table,view,function
 type Schemaer interface {
 	// Table return schema of table,view
-	Table(source string, name string) (*ansi.DbTable, error)
+	Table(db *sql.DB, name string) (*ansi.DbTable, error)
 
 	// Function return schema of store procedure,function
-	Function(source string, name string) (*ansi.DbFunction, error)
+	Function(db *sql.DB, name string) (*ansi.DbFunction, error)
 }
 
 var _schemaers = make(map[string]Schemaer)
@@ -97,17 +97,17 @@ type Dialecter interface {
 	// Quote quote object name, like 'table', [table]
 	Quote(string) string
 
-	// Table return sql to query table schema of name
-	Table(name string) string
+	// TableSql return sql to query table schema of name
+	TableSql(name string) string
 
-	// Columns return sql to query table columns schema
-	Columns(name string) string
+	// ColumnsSql return sql to query table columns schema
+	ColumnsSql(name string) string
 
-	// Function return sql to query function schema of name
-	Function(name string) string
+	// FunctionSql return sql to query function schema of name
+	FunctionSql(name string) string
 
-	// Parameters return sql to query procedure paramters schema
-	Parameters(name string) string
+	// ParametersSql return sql to query procedure paramters schema
+	ParametersSql(name string) string
 
 	// DbType convert native data type to ansi.DbType
 	DbType(nativeType string) ansi.DbType
@@ -171,23 +171,23 @@ func (ad AnsiDialecter) Quote(s string) string {
 	return "\"" + s + "\""
 }
 
-// Table return ""
-func (ansi AnsiDialecter) Table(name string) string {
+// TableSql return ""
+func (ansi AnsiDialecter) TableSql(name string) string {
 	return ""
 }
 
-// Columns return sql to query table columns schema
-func (ansi AnsiDialecter) Columns(name string) string {
+// ColumnsSql return sql to query table columns schema
+func (ansi AnsiDialecter) ColumnsSql(name string) string {
 	return ""
 }
 
-// Function return ""
-func (ad AnsiDialecter) Function(s string) string {
+// FunctionSql return ""
+func (ad AnsiDialecter) FunctionSql(s string) string {
 	return ""
 }
 
-// Parameters return sql to query procedure paramters schema
-func (ad AnsiDialecter) Parameters(name string) string {
+// ParametersSql return sql to query procedure paramters schema
+func (ad AnsiDialecter) ParametersSql(name string) string {
 	return ""
 }
 
@@ -197,11 +197,11 @@ func (ad AnsiDialecter) DbType(nativeType string) ansi.DbType {
 		return ansi.String
 	case "char", "character", "nchar", "varchar", "nvarchar", "string", "longvarchar", "longchar", "varyingcharacter":
 		return ansi.String
-	case "nativecharacter", "nativevaryingcharacter", "character varying":
+	case "nativecharacter", "native character", "nativevaryingcharacter", "character varying":
 		return ansi.String
 	case "bit", "bool", "boolean", "yesno", "logical":
 		return ansi.Boolean
-	case "tinyint unsigned", "uint16", "smallint unsigned", "uint32", "integer unsigned", "uint64", "bigint unsigned":
+	case "tinyint unsigned", "uint16", "smallint unsigned", "uint32", "integer unsigned", "uint64", "bigint unsigned", "unsigned, bigint", "int2", "int8":
 		return ansi.Int
 	case "tinyint", "smallint", "int", "mediumint", "bigint", "int16", "int32", "int64", "integer", "long":
 		return ansi.Int
@@ -230,6 +230,72 @@ func (ad AnsiDialecter) DbType(nativeType string) ansi.DbType {
 	}
 }
 
+// SqliteDialecter is sqlite dialect
+type SqliteDialecter struct {
+	AnsiDialecter
+}
+
+// Name return "mssql"
+func (sqlite SqliteDialecter) Name() string {
+	return "sqlite"
+}
+
+// Table return schema of table,view
+func (sqlite SqliteDialecter) Table(db *sql.DB, name string) (table *ansi.DbTable, err error) {
+	query := fmt.Sprintf(`SELECT name, type FROM sqlite_master WHERE name = '%s'; `, name)
+	var rows *sql.Rows
+	if rows, err = db.Query(query); err != nil {
+		return
+	}
+
+	var t *ansi.DbTable
+	for rows.Next() {
+		tt := ansi.NewTable()
+
+		if err = rows.Scan(&tt.Name, &tt.Type); err != nil {
+		} else {
+			t = tt
+		}
+	}
+	if err = rows.Err(); err != nil {
+		return
+	}
+
+	if t == nil {
+		err = errors.New("table doesn't exist:" + name)
+		return
+	}
+
+	query = fmt.Sprintf("PRAGMA table_info(%s)", t.Name)
+	if rows, err = db.Query(query); err != nil {
+		return
+	}
+
+	for rows.Next() {
+		col := ansi.DbColumn{}
+		var dflt sql.NullString
+
+		if err = rows.Scan(&col.Position, &col.Name, &col.NativeType, &col.IsNullable, &dflt, &col.IsPrimaryKey); err != nil {
+			//
+		} else {
+			col.DbType = sqlite.DbType(col.NativeType)
+			col.IsNullable = col.IsNullable == false
+			t.Columns = append(t.Columns, col)
+		}
+	}
+	if err = rows.Err(); err != nil {
+		return
+	}
+
+	table = t
+	return
+}
+
+// Function return schema of store procedure,function
+func (sqlite SqliteDialecter) Function(db *sql.DB, name string) (*ansi.DbFunction, error) {
+	return nil, errors.New("sqlite doesn't support store procedure")
+}
+
 // MssqlDialecter is ms sql server dialect
 type MssqlDialecter struct {
 	AnsiDialecter
@@ -245,47 +311,69 @@ func (mssql MssqlDialecter) Quote(s string) string {
 	return "[" + s + "]"
 }
 
-// Table return sql to query table schema
-func (mssql MssqlDialecter) Table(name string) string {
+// TableSql return sql to query table schema
+func (mssql MssqlDialecter) TableSql(name string) string {
 	return fmt.Sprintf("SELECT TABLE_CATALOG AS [catalog], TABLE_SCHEMA AS [schema], TABLE_NAME AS [name], TABLE_TYPE AS [type] FROM information_schema.[TABLES] WHERE TABLE_NAME = '%s' ", name)
 }
 
-// Columns return sql to query table columns schema
-func (mssql MssqlDialecter) Columns(name string) string {
+// ColumnsSql return sql to query table columns schema
+func (mssql MssqlDialecter) ColumnsSql(name string) string {
+	// 	return fmt.Sprintf(`
+	// select c.[name], c.column_id as [position], c.is_nullable as [nullable], 
+	// t.name as [datatype],
+	// c.max_length as [length],
+	// c.[precision],
+	// c.[scale],
+	// c.is_identity as [autoincrement],
+	// case when (c.is_identity = 1 or c.is_computed = 1) then 1 else 0 end as [readonly],
+	// isnull(ict.primarykey,0) AS [primarykey]
+	// from 
+	// 	sys.columns c
+	// 	inner join sys.types t on c.user_type_id = t.user_type_id
+	// 	left join 
+	// 	(
+	// 		select ic.column_id, 1 primarykey
+	// 		from sys.indexes i
+	// 		inner join  sys.index_columns ic on i.object_id = ic.object_id and i.index_id = ic.index_id 
+	// 		where i.object_id = object_id('%s') and i.is_primary_key = 1
+	// 	)  as ict on c.column_id = ict.column_id
+	// where
+	// 	c.object_id = object_id('%s')
+	// order by 
+	// 	c.column_id
+	// 	;
+	// `, name, name)
 	return fmt.Sprintf(`
-select c.[name], c.column_id as [position], c.is_nullable as [nullable], 
-t.name as [datatype],
-c.max_length as [length],
-c.[precision],
-c.[scale],
-c.is_identity as [autoincrement],
-case when (c.is_identity = 1 or c.is_computed = 1) then 1 else 0 end as [readonly],
-isnull(ict.primarykey,0) AS [primarykey]
-from 
-	sys.columns c
-	inner join sys.types t on c.user_type_id = t.user_type_id
-	left join 
+SELECT 
+	isc.COLUMN_NAME AS [name], isc.[ORDINAL_POSITION] AS [position], CASE isc.[IS_NULLABLE] WHEN 'YES' THEN 1 ELSE 0 END as [nullable], isc.[DATA_TYPE] AS [datatype], 
+	ISNULL(isc.[CHARACTER_MAXIMUM_LENGTH],0) AS [length], ISNULL(isc.[NUMERIC_PRECISION],0) AS [precision], ISNULL(isc.[NUMERIC_SCALE],0) AS [scale],
+	c.is_identity as [autoincrement],
+	CASE WHEN (c.is_identity = 1 or c.is_computed = 1) THEN 1 else 0 end as [readonly],
+	ISNULL(ict.primarykey,0) AS [primarykey]
+FROM 
+	[INFORMATION_SCHEMA].[COLUMNS] isc
+	INNER JOIN sys.columns c on c.object_id = object_id(isc.table_name) AND c.name = isc.COLUMN_NAME
+	LEFT JOIN
 	(
-		select ic.column_id, 1 primarykey
-		from sys.indexes i
-		inner join  sys.index_columns ic on i.object_id = ic.object_id and i.index_id = ic.index_id 
-		where i.object_id = object_id('%s') and i.is_primary_key = 1
-	)  as ict on c.column_id = ict.column_id
-where
-	c.object_id = object_id('%s')
-order by 
-	c.column_id
-	;
-`, name, name)
+			SELECT ic.column_id, 1 primarykey
+			FROM sys.indexes i
+			INNER JOIN  sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id 
+			where i.object_id = object_id('%s') and i.is_primary_key = 1
+	) AS ict on c.column_id = ict.column_id
+WHERE 
+	isc.table_name = '%s' AND c.object_id = object_id('%s')
+ORDER BY
+	isc.[ORDINAL_POSITION] ;
+`, name, name, name)
 }
 
-// Function return sql to query procedure schema
-func (mssql MssqlDialecter) Function(name string) string {
+// FunctionSql return sql to query procedure schema
+func (mssql MssqlDialecter) FunctionSql(name string) string {
 	return fmt.Sprintf("SELECT ROUTINE_CATALOG AS [catalog], ROUTINE_SCHEMA AS [schema], ROUTINE_NAME as [name] FROM information_schema.ROUTINES WHERE ROUTINE_NAME = '%s' ;", name)
 }
 
-// Parameters return sql to query procedure paramters schema
-func (mssql MssqlDialecter) Parameters(name string) string {
+// ParametersSql return sql to query procedure paramters schema
+func (mssql MssqlDialecter) ParametersSql(name string) string {
 	return fmt.Sprintf("SELECT Substring(PARAMETER_NAME,2,len(PARAMETER_NAME)-1) as [name], ORDINAL_POSITION as [position], PARAMETER_MODE as [dirmode], DATA_TYPE as [datatype],ISNULL(CHARACTER_MAXIMUM_LENGTH,0) as [length], ISNULL(NUMERIC_PRECISION,0) as [precision], ISNULL(NUMERIC_SCALE,0) as [scale] FROM information_schema.PARAMETERS WHERE SPECIFIC_NAME = '%s' ORDER BY ORDINAL_POSITION", name)
 }
 
@@ -309,27 +397,27 @@ func (mysql MysqlDialecter) Quote(s string) string {
 	return "'" + s + "'"
 }
 
-// Table return sql to query table schema
-func (mysql MysqlDialecter) Table(name string) string {
+// TableSql return sql to query table schema
+func (mysql MysqlDialecter) TableSql(name string) string {
 	// http://dev.mysql.com/doc/refman/5.1/en/tables-table.html
 	return fmt.Sprintf("SELECT TABLE_CATALOG AS `catalog`, TABLE_SCHEMA AS `schema`, TABLE_NAME AS `name`, TABLE_TYPE AS `type` FROM information_schema.`TABLES` WHERE TABLE_NAME = '%s' AND TABLE_SCHEMA= DATABASE() ", name)
 }
 
-// Columns return sql to query table columns schema
-func (mysql MysqlDialecter) Columns(name string) string {
+// ColumnsSql return sql to query table columns schema
+func (mysql MysqlDialecter) ColumnsSql(name string) string {
 	// http://dev.mysql.com/doc/refman/5.0/en/show-columns.html
 	// show columns from ttable 
 	return fmt.Sprintf("SELECT COLUMN_NAME as `name`, ORDINAL_POSITION as `position`, CASE IS_NULLABLE WHEN 'YES' THEN TRUE ELSE FALSE END as `nullable`, DATA_TYPE as `datatype`, IFNULL(CHARACTER_MAXIMUM_LENGTH,0) as `length`, IFNULL(NUMERIC_PRECISION,0) as `precision`, IFNULL(NUMERIC_SCALE,0) as `scale`, CASE WHEN EXTRA LIKE '%%auto_increment%%' THEN TRUE ELSE FALSE END AS `autoincrement`, CASE WHEN EXTRA LIKE '%%auto_increment%%' THEN TRUE ELSE FALSE END AS `readonly`, CASE WHEN COLUMN_KEY = 'PRI' THEN TRUE ELSE FALSE END AS `primarykey` FROM information_schema.COLUMNS WHERE TABLE_NAME = '%s' and TABLE_SCHEMA= DATABASE() ORDER BY ORDINAL_POSITION ;", name)
 }
 
-// Function return sql to query procedure schema
-func (mysql MysqlDialecter) Function(name string) string {
+// FunctionSql return sql to query procedure schema
+func (mysql MysqlDialecter) FunctionSql(name string) string {
 	//http://dev.mysql.com/doc/refman/5.1/en/routines-table.html
 	return fmt.Sprintf("SELECT  ROUTINE_CATALOG AS `catalog`, ROUTINE_SCHEMA AS `schema`, ROUTINE_NAME as `name` FROM information_schema.ROUTINES WHERE ROUTINE_NAME = '%s' AND ROUTINE_SCHEMA = DATABASE(); ", name)
 }
 
-// Parameters return sql to query procedure paramters schema
-func (mysql MysqlDialecter) Parameters(name string) string {
+// ParametersSql return sql to query procedure paramters schema
+func (mysql MysqlDialecter) ParametersSql(name string) string {
 	return fmt.Sprintf("SELECT PARAMETER_NAME as `name`, ORDINAL_POSITION as `position`, PARAMETER_MODE as `dirmode`, DATA_TYPE as `datatype`, IFNULL(CHARACTER_MAXIMUM_LENGTH,0) as `length`, IFNULL(NUMERIC_PRECISION,0) as `precision`, IFNULL(NUMERIC_SCALE,0) as `scale` FROM information_schema.PARAMETERS WHERE SPECIFIC_NAME = '%s' and SPECIFIC_SCHEMA = DATABASE() ORDER BY ORDINAL_POSITION", name)
 }
 
@@ -364,7 +452,7 @@ func (pgsql PostgreSQLDialecter) Quote(s string) string {
 }
 
 // Table return sql to query table schema
-func (pgsql PostgreSQLDialecter) Table(name string) string {
+func (pgsql PostgreSQLDialecter) TableSql(name string) string {
 	// http://www.postgresql.org/docs/9.2/static/infoschema-tables.html
 	return fmt.Sprintf(`
 select 
@@ -381,7 +469,7 @@ where
 }
 
 // Columns return sql to query table columns schema
-func (pgsql PostgreSQLDialecter) Columns(name string) string {
+func (pgsql PostgreSQLDialecter) ColumnsSql(name string) string {
 	// http://www.postgresql.org/docs/9.2/static/infoschema-columns.html
 	return fmt.Sprintf(`
 select 
@@ -417,13 +505,13 @@ select
 }
 
 // Function return sql to query procedure schema
-func (pgsql PostgreSQLDialecter) Function(name string) string {
+func (pgsql PostgreSQLDialecter) FunctionSql(name string) string {
 	//http://www.postgresql.org/docs/9.2/static/infoschema-routines.html
 	return fmt.Sprintf(`select routine_catalog as "catalog", routine_schema as "schema", routine_name as "name" from information_schema.routines where routine_name = '%s' and routine_schema = current_schema() ;`, name)
 }
 
 // Parameters return sql to query procedure paramters schema
-func (pgsql PostgreSQLDialecter) Parameters(name string) string {
+func (pgsql PostgreSQLDialecter) ParametersSql(name string) string {
 	return fmt.Sprintf(`
 select 
 	p.parameter_name as "name", p.ordinal_position as "position", p.parameter_mode as "dirmode", p.data_type as "datatype", COALESCE(p.character_maximum_length,0) as "length", COALESCE(p.numeric_precision,0) as "precision", COALESCE(p.numeric_scale,0) as "scale" 
@@ -606,9 +694,9 @@ func (c *SqlDriver) compileMysqlProcedure(sp *Procedure, source string) (query s
 	return
 }
 
-//exec sp_executesql N'update ttable set cdatetime=getdate() where cint >  @P1 ',N'@P1 bigint',42
-
 func (c *SqlDriver) compileMssqlProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
+	////exec sp_executesql N'update ttable set cdatetime=getdate() where cint >  @P1 ',N'@P1 bigint',42
+
 	l := len(sp.Parameters)
 	paramters := make([]interface{}, 0, l)
 	split := false
@@ -638,7 +726,19 @@ func (c *SqlDriver) compileMssqlProcedure(sp *Procedure, source string) (query s
 	for i := 0; i < l; i++ {
 		p := sp.Parameters[i]
 		if p.IsOut() {
-			w.Print("declare @kdbp", strconv.Itoa(i), " int\n")
+			nativeType := "nvarchar(max)"
+			if p.Value != nil {
+				switch p.Value.(type) {
+				case int, uint, int8, int16, int32, int64, uint8, uint16, uint32, uint64:
+					nativeType = "bigint"
+				case float32, float64:
+					nativeType = "decimal(18,10)"
+				case bool:
+					nativeType = "bit"
+				}
+			}
+
+			w.Print("declare @kdbp", strconv.Itoa(i), " ", nativeType, "\n")
 			w.Print("set @kdbp", strconv.Itoa(i), "= ?\n")
 			paramters = append(paramters, p.Value)
 		}
@@ -1334,20 +1434,29 @@ func (sc *StmtCompiler) visitDelete(exp Expression) {
 
 }
 
+// MySql return mysql driver
 func MySql() Driver {
 	return NewSqlDriver(MysqlDialecter{})
 }
 
+// PostgreSQL return postgre sql driver
 func PostgreSQL() Driver {
 	return NewSqlDriver(PostgreSQLDialecter{})
 }
 
+// DefaultSQL return a default sql driver
 func DefaultSQL() Driver {
 	return NewSqlDriver(AnsiDialecter{})
 }
 
+// MSSQL return ms sql server driver
 func MSSQL() Driver {
 	return NewSqlDriver(MssqlDialecter{})
+}
+
+// SQLite return sqlite driver
+func SQLite() Driver {
+	return NewSqlDriver(SqliteDialecter{})
 }
 
 func init() {
@@ -1365,4 +1474,8 @@ func init() {
 
 	RegisterDialecter("lodbc", MssqlDialecter{})
 	RegisterCompiler("lodbc", MSSQL())
+
+	RegisterDialecter("sqlite3", SqliteDialecter{})
+	RegisterCompiler("sqlite3", SQLite())
+
 }

@@ -7,10 +7,8 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	//_ "github.com/mattn/go-adodb"
-	_ "github.com/LukeMauldin/lodbc"
+	_ "github.com/changkong/go-sqlite3s"
 	"github.com/sdming/kdb"
-	"github.com/sdming/kdb/ansi"
 	"log"
 	"os"
 	"time"
@@ -28,36 +26,11 @@ var data map[string]interface{} = map[string]interface{}{
 }
 
 func init() {
-	//kdb.RegisterDSN("demo", "adodb", "Provider=sqloledb;Data Source=172.18.194.32;Initial Catalog=demo;User Id=sa;Password=sa;")
-	kdb.RegisterDSN("demo", "lodbc", "Server=172.18.194.32;Database=demo;UID=sa;PWD=sa;Driver={SQL Server Native Client 10.0};")
+	kdb.RegisterDSN("demo", "sqlite3", `./demo.db`)
 	kdb.LogLevel = kdb.LogDebug
 	kdb.Logger = log.New(os.Stdout, "kdb", log.Ldate|log.Ltime)
-}
 
-func procedure() {
-	db := kdb.NewDB("demo")
-	fmt.Println("\nQuery", "usp_query")
-	printRows(db.Query("exec usp_query ?", 1))
-	db.Close()
-
-	db = kdb.NewDB("demo")
-	fmt.Println("\nQueryFunc", "usp_query")
-	printRows(db.QueryFunc("usp_query", kdb.Map(data)))
-	db.Close()
-
-	db = kdb.NewDB("demo")
-	fmt.Println("\nExecFunc", "usp_exec")
-	printResult(db.ExecFunc("usp_exec", kdb.Map(data)))
-	db.Close()
-
-	db = kdb.NewDB("demo")
-	fmt.Println("\nProcedure", "usp_inout")
-	sp := kdb.NewProcedure("usp_inout").
-		Set("x", 3).
-		SetDir("y", 5, ansi.DirOut).
-		SetDir("sum", nil, ansi.DirOut)
-	printRows(db.QueryExp(sp))
-	db.Close()
+	//os.Remove("./foo.db")
 }
 
 func basic() {
@@ -70,7 +43,7 @@ func basic() {
 	fmt.Println("\nQuery:", query)
 	printRows(db.Query(query, 0))
 
-	query = "update ttable set cdatetime=getdate() where cint > ?"
+	query = "update ttable set cdatetime=DateTime('now') where cint > ?"
 	fmt.Println("\nExec", query)
 	printResult(db.Exec(query, 1))
 
@@ -78,7 +51,7 @@ func basic() {
 	fmt.Println("\nQueryText", query)
 	printRows(db.QueryText(query, kdb.Map(data)))
 
-	query = "update ttable set cdatetime=getdate() where cint > {cint}"
+	query = "update ttable set cdatetime=DateTime('now') where cint > {cint}"
 	fmt.Println("\nExecText", query)
 	printResult(db.ExecText(query, kdb.Map(data)))
 }
@@ -92,7 +65,7 @@ func text() {
 	fmt.Println("\nText query", query)
 	printRows(db.QueryExp(text))
 
-	query = "update ttable set cdatetime=getdate() where cint > {cint}"
+	query = "update ttable set cdatetime=DateTime('now') where cint > {cint}"
 	text = kdb.NewText(query).Set("cint", 42)
 	fmt.Println("\nText exec", query)
 	printResult(db.ExecExp(text))
@@ -110,34 +83,12 @@ func schema() {
 		fmt.Println(table)
 	}
 
-	fmt.Println("\nFunction", "usp_query")
-	if fn, err := db.Function("usp_query"); err != nil {
-		fmt.Println(err)
+	fmt.Println("\nTable", "ttable_notexists")
+	if table, err := db.Table("ttable_notexists"); err != nil {
+		fmt.Println("Table", err)
 	} else {
-		fmt.Println(fn)
+		fmt.Println(table)
 	}
-
-	fmt.Println("\nFunction", "usp_exec")
-	if fn, err := db.Function("usp_exec"); err != nil {
-		fmt.Println(err)
-	} else {
-		fmt.Println(fn)
-	}
-
-	fmt.Println("\nFunction", "usp_inout")
-	if fn, err := db.Function("usp_inout"); err != nil {
-		fmt.Println(err)
-	} else {
-		fmt.Println(fn)
-	}
-
-	fmt.Println("\nFunction", "usp_notexists")
-	if fn, err := db.Function("usp_notexists"); err != nil {
-		fmt.Println(err)
-	} else {
-		fmt.Println(fn)
-	}
-
 }
 
 func deleteTable() {
@@ -267,14 +218,13 @@ func insertTable() {
 }
 
 func main() {
-	//basic()
-	//text()
-	procedure()
-	// insertTable()
-	// updateTable()
-	// selectTable()
-	// deleteTable()
-	// schema()
+	basic()
+	text()
+	insertTable()
+	updateTable()
+	selectTable()
+	deleteTable()
+	schema()
 }
 
 var panicWhenErr bool = true
