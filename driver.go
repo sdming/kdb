@@ -228,6 +228,7 @@ func (ad AnsiDialecter) DbType(nativeType string) ansi.DbType {
 	default:
 		return ansi.Var
 	}
+	return ansi.Var
 }
 
 // SqliteDialecter is sqlite dialect
@@ -523,6 +524,96 @@ where
 	and r.routine_name = '%s' and r.routine_schema = current_schema()
 order by 
 	ordinal_position ;
+`, name)
+}
+
+// OracleSQLDialecter is oracle dialect
+type OracleSQLDialecter struct {
+	AnsiDialecter
+}
+
+// Name return "oracle"
+func (oracle OracleSQLDialecter) Name() string {
+	return "oracle"
+}
+
+// ParameterPlaceHolder return :
+func (oracle OracleSQLDialecter) ParameterPlaceHolder() string {
+	return ":"
+}
+
+// Quote doesn't quote identifier 
+func (oracle OracleSQLDialecter) Quote(s string) string {
+	return s
+}
+
+// Table return sql to query table schema
+func (oracle OracleSQLDialecter) TableSql(name string) string {
+	// http://docs.oracle.com/cd/E11882_01/server.112/e25513/statviews_2117.htm#REFRN20286
+	return fmt.Sprintf(`
+select
+	TABLESPACE_NAME as catalog,
+	TABLESPACE_NAME as schema, 
+	TABLE_NAME as name, 
+	DECODE(TABLESPACE_NAME, 'SYS', 'System', 'SYSTEM', 'System', 'SYSMAN', 'System','CTXSYS', 'System','MDSYS', 'System','OLAPSYS', 'System', 'ORDSYS', 'System','OUTLN', 'System', 'WKSYS', 'System','WMSYS', 'System','XDB', 'System','ORDPLUGINS', 'System','User') AS "type"
+from 
+	user_tables
+where 
+	TABLE_NAME = '%s' 
+	`, name)
+}
+
+// Columns return sql to query table columns schema
+func (oracle OracleSQLDialecter) ColumnsSql(name string) string {
+	// http://docs.oracle.com/cd/E11882_01/server.112/e25513/statviews_2103.htm#REFRN20277
+	return fmt.Sprintf(`
+select
+  	COLUMN_NAME as name, 
+	COLUMN_ID as position, 
+	case NULLABLE when 'Y' then 1 else 0 end as nullable, 
+	DATA_TYPE as datatype,
+	COALESCE(CHAR_LENGTH,0) as length, 
+	COALESCE(DATA_PRECISION,0) as precision, 
+	COALESCE(DATA_SCALE,0) as scale ,
+	0 as autoincrement,
+	0 as readonly,
+	case when exists (
+    select cc.COLUMN_NAME 
+    from all_cons_columns cc inner join all_constraints cs  on cs.CONSTRAINT_NAME = cc.CONSTRAINT_NAME and cc.OWNER = cs.OWNER
+    where cs.CONSTRAINT_TYPE = 'P' and cs.TABLE_NAME = '%s' and cc.COLUMN_NAME = c.COLUMN_NAME
+	) then 1 else 0 end as primarykey
+ from 
+	user_tab_columns  c
+ where 
+	TABLE_NAME = '%s' 
+ order by 
+	COLUMN_ID ;
+
+`, name, name)
+}
+
+// Function return sql to query procedure schema
+func (oracle OracleSQLDialecter) FunctionSql(name string) string {
+	return fmt.Sprintf(`select distinct OWNER as catalog, OWNER as schema, PROCEDURE_NAME as name from all_procedures where PROCEDURE_NAME = '%s' and OWNER = (select sys_context('USERENV','SESSION_USER') from dual);`, name)
+}
+
+// Parameters return sql to query procedure paramters schema
+func (oracle OracleSQLDialecter) ParametersSql(name string) string {
+	// select sys_context('USERENV','SESSION_USER') from dual
+	return fmt.Sprintf(`
+select distinct
+	ARGUMENT_NAME as name, POSITION as position, 
+  	IN_OUT as dirmode, 
+  	DATA_TYPE as datatype, 
+  	COALESCE(CHAR_LENGTH,0) as length, 
+  	COALESCE(DATA_PRECISION,0) as precision, 
+  	COALESCE(DATA_SCALE,0) as scale 
+from 
+	ALL_ARGUMENTS
+where
+	DATA_LEVEL = 0 AND OBJECT_NAME = '%s' AND OWNER = (select sys_context('USERENV','SESSION_USER') from dual)
+order by 
+	POSITION ;
 `, name)
 }
 
@@ -1459,6 +1550,11 @@ func SQLite() Driver {
 	return NewSqlDriver(SqliteDialecter{})
 }
 
+// Oracle return oracle driver
+func Oracle() Driver {
+	return NewSqlDriver(OracleSQLDialecter{})
+}
+
 func init() {
 	RegisterDialecter("ansi", AnsiDialecter{})
 	RegisterCompiler("ansi", DefaultSQL())
@@ -1477,5 +1573,11 @@ func init() {
 
 	RegisterDialecter("sqlite3", SqliteDialecter{})
 	RegisterCompiler("sqlite3", SQLite())
+
+	RegisterDialecter("oci8", OracleSQLDialecter{})
+	RegisterCompiler("oci8", Oracle())
+
+	RegisterDialecter("oracle", OracleSQLDialecter{})
+	RegisterCompiler("oracle", Oracle())
 
 }

@@ -286,13 +286,14 @@ example :
 *[mysql](https://github.com/sdming/kdb/blob/master/example/mysql.go)  
 *[postgres](https://github.com/sdming/kdb/blob/master/example/postgres.go)  
 *[mssql](https://github.com/sdming/kdb/blob/master/example/mssql.go)  
+*[sqlite](https://github.com/sdming/kdb/blob/master/example/sqlite.go)  
 
 ## Driver
 
 *Mysql: https://github.com/Go-SQL-Driver/MySQL       
 *PostgreSQL: https://github.com/bmizerany/pq      
 *lodbc: https://github.com/LukeMauldin/lodbc   
-*SQLite: https://github.com/mattn/go-sqlite3      
+*SQLite: https://github.com/changkong/go-sqlite3s       
 *Oracle: https://github.com/mattn/go-oci8    
 
 
