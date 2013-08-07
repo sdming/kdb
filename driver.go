@@ -111,6 +111,9 @@ type Dialecter interface {
 
 	// DbType convert native data type to ansi.DbType
 	DbType(nativeType string) ansi.DbType
+
+	// SplitStatement return string to split sql statement; return ; generally 
+	SplitStatement() string
 }
 
 var _dialecters = make(map[string]Dialecter)
@@ -189,6 +192,11 @@ func (ad AnsiDialecter) FunctionSql(s string) string {
 // ParametersSql return sql to query procedure paramters schema
 func (ad AnsiDialecter) ParametersSql(name string) string {
 	return ""
+}
+
+// SplitStatement return ; 
+func (ad AnsiDialecter) SplitStatement() string {
+	return " ; "
 }
 
 func (ad AnsiDialecter) DbType(nativeType string) ansi.DbType {
@@ -542,6 +550,16 @@ func (oracle OracleSQLDialecter) ParameterPlaceHolder() string {
 	return ":"
 }
 
+// SupportNamedParameter return true
+func (oracle OracleSQLDialecter) SupportNamedParameter() bool {
+	return true
+}
+
+// SupportIndexedParameter regturn true
+func (oracle OracleSQLDialecter) SupportIndexedParameter() bool {
+	return true
+}
+
 // Quote doesn't quote identifier 
 func (oracle OracleSQLDialecter) Quote(s string) string {
 	return s
@@ -555,7 +573,7 @@ select
 	TABLESPACE_NAME as catalog,
 	TABLESPACE_NAME as schema, 
 	TABLE_NAME as name, 
-	DECODE(TABLESPACE_NAME, 'SYS', 'System', 'SYSTEM', 'System', 'SYSMAN', 'System','CTXSYS', 'System','MDSYS', 'System','OLAPSYS', 'System', 'ORDSYS', 'System','OUTLN', 'System', 'WKSYS', 'System','WMSYS', 'System','XDB', 'System','ORDPLUGINS', 'System','User') AS "type"
+	DECODE(TABLESPACE_NAME, 'SYS', 'System', 'SYSTEM', 'System', 'SYSMAN', 'System','CTXSYS', 'System','MDSYS', 'System','OLAPSYS', 'System', 'ORDSYS', 'System','OUTLN', 'System', 'WKSYS', 'System','WMSYS', 'System','XDB', 'System','ORDPLUGINS', 'System','User') AS type
 from 
 	user_tables
 where 
@@ -570,31 +588,31 @@ func (oracle OracleSQLDialecter) ColumnsSql(name string) string {
 select
   	COLUMN_NAME as name, 
 	COLUMN_ID as position, 
-	case NULLABLE when 'Y' then 1 else 0 end as nullable, 
+	case NULLABLE when 'Y' then '1'  else '0'  end as nullable, 
 	DATA_TYPE as datatype,
 	COALESCE(CHAR_LENGTH,0) as length, 
 	COALESCE(DATA_PRECISION,0) as precision, 
 	COALESCE(DATA_SCALE,0) as scale ,
-	0 as autoincrement,
-	0 as readonly,
+	to_char(0)   as autoincrement,
+	to_char(0)   as readonly,
 	case when exists (
     select cc.COLUMN_NAME 
     from all_cons_columns cc inner join all_constraints cs  on cs.CONSTRAINT_NAME = cc.CONSTRAINT_NAME and cc.OWNER = cs.OWNER
     where cs.CONSTRAINT_TYPE = 'P' and cs.TABLE_NAME = '%s' and cc.COLUMN_NAME = c.COLUMN_NAME
-	) then 1 else 0 end as primarykey
+	) then '1' else '0' end as primarykey
  from 
 	user_tab_columns  c
  where 
 	TABLE_NAME = '%s' 
  order by 
-	COLUMN_ID ;
+	COLUMN_ID 
 
 `, name, name)
 }
 
 // Function return sql to query procedure schema
 func (oracle OracleSQLDialecter) FunctionSql(name string) string {
-	return fmt.Sprintf(`select distinct OWNER as catalog, OWNER as schema, PROCEDURE_NAME as name from all_procedures where PROCEDURE_NAME = '%s' and OWNER = (select sys_context('USERENV','SESSION_USER') from dual);`, name)
+	return fmt.Sprintf(`select distinct OWNER as catalog, OWNER as schema, OBJECT_NAME as name from all_procedures where OBJECT_NAME = '%s' and OWNER = (select sys_context('USERENV','SESSION_USER') from dual) `, name)
 }
 
 // Parameters return sql to query procedure paramters schema
@@ -613,8 +631,13 @@ from
 where
 	DATA_LEVEL = 0 AND OBJECT_NAME = '%s' AND OWNER = (select sys_context('USERENV','SESSION_USER') from dual)
 order by 
-	POSITION ;
+	POSITION 
 `, name)
+}
+
+// SplitStatement return nothing 
+func (oracle OracleSQLDialecter) SplitStatement() string {
+	return " "
 }
 
 // SqlDriver is ansi sql compiler
@@ -785,6 +808,64 @@ func (c *SqlDriver) compileMysqlProcedure(sp *Procedure, source string) (query s
 	return
 }
 
+func (c *SqlDriver) compileOracleProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
+	l := len(sp.Parameters)
+	paramters := make([]interface{}, 0, l)
+	w := &sqlWriter{}
+
+	// no parameter
+	if l == 0 {
+		w.WriteString("begin " + sp.Name + "(); end; ")
+		query = w.String()
+		args = paramters
+		return
+	}
+
+	index := 0
+	split := false
+	retName := sp.ReturnParameterName()
+	if retName == "" {
+		w.WriteString("begin " + sp.Name + "( ")
+	} else {
+		w.WriteString("begin :" + retName + ":= " + sp.Name + "( ")
+	}
+
+	for i := 0; i < l; i++ {
+		p := sp.Parameters[i]
+
+		if split {
+			w.Comma()
+		}
+		split = true
+
+		if p.Dir != ansi.DirReturn {
+			w.WriteString(p.Name + "=>:" + p.Name)
+			index++
+			paramters = append(paramters, p.Value)
+		}
+	}
+	w.WriteString(" ); end; ")
+
+	// if sp.HasOutParameter() || retName != "" {
+	// 	w.WriteString("select ")
+	// 	split = false
+	// 	for i := 0; i < l; i++ {
+	// 		p := sp.Parameters[i]
+	// 		if p.IsOut() || p.Dir == ansi.DirReturn {
+	// 			if split {
+	// 				w.Comma()
+	// 			}
+	// 			split = true
+	// 			w.WriteString(":" + p.Name)
+	// 		}
+	// 	}
+	// }
+
+	query = w.String()
+	args = paramters
+	return
+}
+
 func (c *SqlDriver) compileMssqlProcedure(sp *Procedure, source string) (query string, args []interface{}, err error) {
 	////exec sp_executesql N'update ttable set cdatetime=getdate() where cint >  @P1 ',N'@P1 bigint',42
 
@@ -926,6 +1007,8 @@ func (c *SqlDriver) compileProcedure(sp *Procedure, source string) (query string
 		return c.compilePostgresProcedure(sp, source)
 	case "mssql":
 		return c.compileMssqlProcedure(sp, source)
+	case "oracle":
+		return c.compileOracleProcedure(sp, source)
 	}
 	err = errors.New("driver dones't support procedure:" + c.Dialecter.Name())
 	return
@@ -1086,7 +1169,7 @@ func (sc *StmtCompiler) writeValue(v interface{}) {
 		sc.w.WriteString(p)
 	case 1:
 		sc.paraIndex++
-		sc.w.WriteString(p + strconv.Itoa(sc.paraIndex))
+		sc.w.WriteString(p + "pv" + strconv.Itoa(sc.paraIndex))
 	case 2:
 		sc.paraIndex++
 		sc.w.WriteString(p + strconv.Itoa(sc.paraIndex))
@@ -1448,9 +1531,7 @@ func (sc *StmtCompiler) visitQuery(exp Expression) {
 		sc.w.LineBreak()
 		sc.w.Print(ansi.Limit, " ", strconv.Itoa(query.Offset), ",", strconv.Itoa(query.Count))
 	}
-
-	sc.w.WriteString(ansi.StatementSplit)
-
+	sc.visitEndStatement()
 }
 
 func (sc *StmtCompiler) visitInsert(exp Expression) {
@@ -1482,8 +1563,7 @@ func (sc *StmtCompiler) visitInsert(exp Expression) {
 		sc.visitExp(set.Value)
 	}
 	sc.w.CloseParentheses()
-
-	sc.w.WriteString(ansi.StatementSplit)
+	sc.visitEndStatement()
 }
 
 func (sc *StmtCompiler) visitUpdate(exp Expression) {
@@ -1507,7 +1587,7 @@ func (sc *StmtCompiler) visitUpdate(exp Expression) {
 		sc.w.LineBreak()
 		sc.w.PrintSplit(" ", ansi.Limit, strconv.Itoa(u.Count))
 	}
-	sc.w.WriteString(ansi.StatementSplit)
+	sc.visitEndStatement()
 
 }
 
@@ -1521,8 +1601,11 @@ func (sc *StmtCompiler) visitDelete(exp Expression) {
 		sc.w.LineBreak()
 		sc.w.PrintSplit(" ", ansi.Limit, strconv.Itoa(d.Count))
 	}
-	sc.w.WriteString(ansi.StatementSplit)
+	sc.visitEndStatement()
+}
 
+func (sc *StmtCompiler) visitEndStatement() {
+	sc.w.WriteString(sc.Dialecter.SplitStatement())
 }
 
 // MySql return mysql driver
@@ -1574,10 +1657,7 @@ func init() {
 	RegisterDialecter("sqlite3", SqliteDialecter{})
 	RegisterCompiler("sqlite3", SQLite())
 
-	RegisterDialecter("oci8", OracleSQLDialecter{})
-	RegisterCompiler("oci8", Oracle())
-
-	RegisterDialecter("oracle", OracleSQLDialecter{})
-	RegisterCompiler("oracle", Oracle())
+	RegisterDialecter("goracle", OracleSQLDialecter{})
+	RegisterCompiler("goracle", Oracle())
 
 }

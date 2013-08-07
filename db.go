@@ -128,7 +128,7 @@ func (db *DB) Function(name string) (fn *ansi.DbFunction, err error) {
 		ff := ansi.NewFunction()
 
 		if err = rows.Scan(&ff.Catalog, &ff.Schema, &ff.Name); err != nil {
-			//TODO:
+			return
 		} else {
 			f = ff
 		}
@@ -155,7 +155,7 @@ func (db *DB) Function(name string) (fn *ansi.DbFunction, err error) {
 		p := ansi.DbParameter{}
 		dir := ""
 		if err = rows.Scan(&p.Name, &p.Position, &dir, &p.NativeType, &p.Size, &p.Precision, &p.Scale); err != nil {
-			//
+			return
 		} else {
 			p.DbType = dialect.DbType(p.NativeType)
 			switch dir {
@@ -236,12 +236,13 @@ func (db *DB) Table(name string) (table *ansi.DbTable, err error) {
 		col := ansi.DbColumn{}
 
 		if err = rows.Scan(&col.Name, &col.Position, &col.IsNullable, &col.NativeType, &col.Size, &col.Precision, &col.Scale, &col.IsAutoIncrement, &col.IsReadOnly, &col.IsPrimaryKey); err != nil {
-			//
+			return
 		} else {
 			col.DbType = dialect.DbType(col.NativeType)
 			t.Columns = append(t.Columns, col)
 		}
 	}
+
 	if err = rows.Err(); err != nil {
 		return
 	}

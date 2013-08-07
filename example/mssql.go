@@ -267,14 +267,14 @@ func insertTable() {
 }
 
 func main() {
-	//basic()
-	//text()
+	basic()
+	text()
 	procedure()
-	// insertTable()
-	// updateTable()
-	// selectTable()
-	// deleteTable()
-	// schema()
+	insertTable()
+	updateTable()
+	selectTable()
+	deleteTable()
+	schema()
 }
 
 var panicWhenErr bool = true
