@@ -91,10 +91,10 @@ func scanScalar(rows *sql.Rows, v interface{}) (err error) {
 	}
 
 	if err != nil {
-		return err
+		return
 	}
 	if err = rows.Err(); err != nil {
-		return err
+		return
 	}
 	if i == 0 {
 		return ErrNoResult
@@ -230,4 +230,14 @@ func DumpRows(rows *sql.Rows) string {
 		buf.WriteString(fmt.Sprintln("rows.Err()", err))
 	}
 	return buf.String()
+}
+
+func asString(s interface{}) string {
+	switch v := s.(type) {
+	case string:
+		return v
+	case []byte:
+		return string(v)
+	}
+	return fmt.Sprintf("%v", s)
 }
