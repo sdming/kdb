@@ -5,19 +5,24 @@ kdb is a package to wrap Go's [database/sql](http://golang.org/pkg/database/sql)
 
 ## Version
 
-Current release: version 0.2 (2013-07-31)
+Current release: version 0.3 (2013-08-16)
 
 ## Document
 
 [godoc](http://godoc.org/github.com/sdming/kdb)  
+
 Sorry for bad english, if you want to improve documents, please contact me.  
 
 ## Features  
 
-* Lightweight, flexible and fast  
-* ORM  
-* Sql template  
-* Store procedure 
+* lightweight, flexible and fast  
+* orm  
+* suppoort Sql template  
+* support Store procedure, and out parameter   
+* support get schema of table and store procedure  
+* support sql expression  
+* ingore NULL when scan rows  
+* test on sql server, mysql, olite, postgres, oracle   
   
 ## Requirements
 
@@ -27,32 +32,32 @@ Go 1.1+
 
 go get github.com/sdming/kdb 
 
-## Register
+## Register a new driver
 
 Need to call RegisterDialecter/RegisterCompiler to bind your sql driver to a kdb.Dialecter and kdb.Compiler.  
 
 example :
 
 
-	func init() {
-		RegisterDialecter("ansi", AnsiDialecter{})
-		RegisterCompiler("ansi", DefaultSQL())
+	RegisterDialecter("mysql", MysqlDialecter{})
+	RegisterCompiler("mysql", MySql())
 
-		RegisterDialecter("mysql", MysqlDialecter{})
-		RegisterCompiler("mysql", MySql())
+	RegisterDialecter("postgres", PostgreSQLDialecter{})
+	RegisterCompiler("postgres", PostgreSQL())
 
-		RegisterDialecter("postgres", PostgreSQLDialecter{})
-		RegisterCompiler("postgres", PostgreSQL())
 
-		RegisterDialecter("adodb", MssqlDialecter{})
-		RegisterCompiler("adodb", MSSQL())
+## Register a DSN
 
-		RegisterDialecter("lodbc", MssqlDialecter{})
-		RegisterCompiler("lodbc", MSSQL())
-	}
+Call RegisterDSN to register a DSN, example:
+
+
+	kdb.RegisterDSN("demo", "postgres", "user=postgres password=sa dbname=postgres sslmode=disable client_encoding=UTF8")
 
 
 ## Example 
+
+demo of how to query or execute sql in Go way:
+		
 
 	func basic() {
 		db := kdb.NewDB("demo")
@@ -60,25 +65,30 @@ example :
 
 		var query string
 
-		query = "select * from ttable where cint > ?"
+		query = "select * from ttable where cint > $1"
 		fmt.Println("\nQuery:", query)
 		printRows(db.Query(query, 1))
 
-		query = "update ttable set cdatetime=NOW() where cint > ?"
+		query = "update ttable set cdatetime=NOW() where cint > $1"
 		fmt.Println("\nExec", query)
 		printResult(db.Exec(query, 1))
-
-		query = "select * from ttable where cint > {cint}"
-		fmt.Println("\nQueryText", query)
-		printRows(db.QueryText(query, kdb.Map(data)))
-
-		query = "update ttable set cdatetime=NOW() where cint > {cint}"
-		fmt.Println("\nExecText", query)
-		printResult(db.ExecText(query, kdb.Map(data)))
 	}
+
+demo of how to bind parameters to a map or struct
+
+
+	query = "select * from ttable where cint > {cint}"
+	fmt.Println("\nQueryText", query)
+	printRows(db.QueryText(query, kdb.Map(data)))
+
+	query = "update ttable set cdatetime=NOW() where cint > {cint}"
+	fmt.Println("\nExecText", query)
+	printResult(db.ExecText(query, kdb.Map(data)))
 
 
 ## Template
+
+demo of how to run a template sql.  
 
 
 	func text() {
@@ -100,27 +110,34 @@ example :
 
 ## Store Procedure  
 
+demo of how to run a store procedure.  
+
+	
 	func procedure() {
 		db := kdb.NewDB("demo")
-		fmt.Println("\nQueryFunc", "sp_query")
-		printRows(db.QueryFunc("sp_query", kdb.Map(data)))
+		fmt.Println("\nQueryFunc", "fn_query")
+		printRows(db.QueryFunc("fn_query", kdb.Map(data)))
 		db.Close()
 
 		db = kdb.NewDB("demo")
-		fmt.Println("\nExecFunc", "sp_exec")
-		printResult(db.ExecFunc("sp_exec", kdb.Map(data)))
+		fmt.Println("\nExecFunc", "fn_exec")
+		printRows(db.QueryFunc("fn_exec", kdb.Map(data)))
 		db.Close()
 
 		db = kdb.NewDB("demo")
-		fmt.Println("\nProcedure", "sp_exec")
-		sp := kdb.NewProcedure("sp_exec").
-			Set("cint", 42)
-		printResult(db.ExecExp(sp))
+		fmt.Println("\nProcedure", "fn_inout")
+		sp := kdb.NewProcedure("fn_inout").
+			Set("x", 3).
+			SetDir("y", 5, ansi.DirInOut).
+			SetDir("sum", nil, ansi.DirOut)
+		printRows(db.QueryExp(sp))
 		db.Close()
 	}
 
 
 ## Select
+
+demo of how to select from a table.  
 
 	func selectTable() {
 		db := kdb.NewDB("demo")
@@ -159,7 +176,7 @@ example :
 			CloseParentheses()
 
 		q.UseGroupBy().
-			Column("cbool", "cint").
+			Column("cbool", "cint", "cstring").
 			By(kdb.Sql("cfloat-1"))
 
 		q.UseHaving().
@@ -174,6 +191,8 @@ example :
 
 
 ## Update 
+
+demo of how to update a table.  
 
 	func updateTable() {
 		db := kdb.NewDB("demo")
@@ -190,15 +209,15 @@ example :
 		u.Set("cstring", "cstring new").
 			Set("cfloat", 6.28)
 		u.Where.Equals("cint", 42)
-		u.Limit(1000)
 
 		printResult(db.ExecExp(u))
-
 	}
 
 
-
 ## Delete
+
+demo of how to delete from a table.  
+
 
 	func deleteTable() {
 		db := kdb.NewDB("demo")
@@ -228,6 +247,9 @@ example :
 
 
 ## Insert 
+
+demo of how to insert into a table.  
+
 
 	func insertTable() {
 		db := kdb.NewDB("demo")
@@ -259,7 +281,10 @@ example :
 
 	}
 
-## Get schema
+
+## Schema
+
+demo of how to get schema of table\store procedure
 
 	func schema() {
 		db := kdb.NewDB("demo")
@@ -278,8 +303,193 @@ example :
 		} else {
 			fmt.Println(fn)
 		}
+
+		fmt.Println("\nFunction", "fn_exec")
+		if fn, err := db.Function("fn_exec"); err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(fn)
+		}
+
+		fmt.Println("\nFunction", "fn_inout")
+		if fn, err := db.Function("fn_inout"); err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(fn)
+		}
+
+		fmt.Println("\nFunction", "fn_notexists")
+		if fn, err := db.Function("fn_notexists"); err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(fn)
+		}
+
 	}
 
+ReadRow(Scan)
+===
+
+ReadRow scan current row to a interface{}. kdb use NullInt64, NullBool... to scan values, it means it's safe to scan NULL .
+
+data
+
+	CREATE TABLE ttypes (
+		id 			int, 
+		cbool 	int,
+		cint 		int,
+		cfloat 	float,
+		cstring varchar(100)
+	);
+
+	insert ttypes(id,cbool,cint,cfloat,cstring) values(1, 1, 123, 3.14, 'string');
+	insert ttypes(id,cbool,cint,cfloat,cstring) values(2, null, null, null, null);
+
+
+read row to a *T
+
+	var v int
+	query := fmt.Sprintf("select cint from ttypes where id = 1 ")
+	queryAndReadRow(db, query, &v)
+	fmt.Println("read to int:", v == 123)
+
+read row to a []T
+
+	l := []int{0}
+	queryAndReadRow(db, query, l)
+	fmt.Println("read to []int:", l[0] == 123)
+
+read row to a []*T
+
+	v = 0
+	lp := []*int{&v}
+	queryAndReadRow(db, query, lp)
+	fmt.Println("read to []*int:", v == 123)
+
+read row to to a map[string]T
+
+	m := map[string]int{}
+	queryAndReadRow(db, query, m)
+	fmt.Println("read to map[string]int:", m["cint"] == 123)
+
+read row to a map[string]T, with default value
+
+	mv := map[string]int{"cint": 0}
+	queryAndReadRow(db, query, mv)
+	fmt.Println("read to map[string]int:", mv["cint"] == 123)
+
+read row to a map[string]*T
+
+	v = 0
+	mp := map[string]*int{"cint": &v}
+	queryAndReadRow(db, query, mp)
+	fmt.Println("read to map[string]*int:", v == 123)
+
+read row (null) to *T
+
+	v = 321
+	query = "select cint from ttypes where id = 2"
+	queryAndReadRow(db, query, &v)
+	fmt.Println("read null to int:", v == 321)
+
+read row (null) to []T
+
+	l = []int{321}
+	queryAndReadRow(db, query, l)
+	fmt.Println("read null to []int:", l[0] == 321)
+
+read row (null) to []*T
+
+	lp = []*int{&v}
+	queryAndReadRow(db, query, l)
+	fmt.Println("read null to []int:", v == 321)
+
+read row (null) to map[string]T
+
+	m = map[string]int{}
+	queryAndReadRow(db, query, m)
+	fmt.Println("read null to map[string]int:", m["cint"] == 0)
+
+read row (null) to map[string]T, with default value
+
+	mv = map[string]int{"cint": 321}
+	queryAndReadRow(db, query, mv)
+	fmt.Println("read null to map[string]int:", mv["cint"] == 321)
+
+read row (null) to map[string]*T
+
+	v = 321
+	mp = map[string]*int{"cint": &v}
+	queryAndReadRow(db, query, mp)
+	fmt.Println("read null to map[string]int:", v == 321)
+
+
+Read
+---
+
+Read copy rows to a slice []T.
+
+read rows to []T
+
+	var v []int
+	query := "select cint from ttypes where id in (1,2) order by id "
+	queryAndRead(db, query, &v)
+	fmt.Println("read rows to []int:", v[0] == 123, v[1] == 0)
+
+read rows to []map[string]T
+
+	m := make([]map[string]int, 0)
+	queryAndRead(db, query, &m)
+	fmt.Println("read rows to []map[string]int:", m[0]["cint"] == 123, m[1]["cint"] == 0)
+
+read rows to [][]T
+
+	l := make([][]int, 0)
+	queryAndRead(db, query, &l)
+	fmt.Println("read rows to [][]int:", l[0][0] == 123, l[1][0] == 0)
+
+
+Map rows to a struct
+===
+
+When use Read/ReadRow to copy rows to a struct, by default kdb map columns to struct fields with name, for example, copy column "foo" to field named "foo", you can use tags to change. 
+
+tags demo:
+
+	type InfoTag struct {
+		Id     int     "kdb:{pk}"
+		Bool   bool    "kdb:{name=cbool}"
+		Int    int     "kdb:{name=cint}"
+		Float  float32 "kdb:{name=cfloat}"
+		String string  "kdb:{name=cstring}"
+	}
+
+	type Info struct {
+		Id      int
+		CBool   bool
+		CInt    int
+		CFloat  float32
+		CString string
+	}
+
+map rows to []T
+
+	var v []Info
+	query := "select * from ttypes where id in (1,2) order by id "
+	queryAndRead(db, query, &v)
+	fmt.Println("map rows to []Info", v[0], v[1])
+
+map rows to []*T
+
+	var vptr []*Info
+	queryAndRead(db, query, &vptr)
+	fmt.Println("map rows to []*Info", *(vptr[0]), *(vptr[1]))
+
+map rows to []T, use tags
+
+	var vtag []InfoTag
+	queryAndRead(db, query, &vtag)
+	fmt.Println("map rows to []InfoTag", vtag[0], vtag[1])
 
 ## More examples
 
@@ -287,6 +497,8 @@ example :
 *[postgres](https://github.com/sdming/kdb/blob/master/example/postgres.go)  
 *[mssql](https://github.com/sdming/kdb/blob/master/example/mssql.go)  
 *[sqlite](https://github.com/sdming/kdb/blob/master/example/sqlite.go)  
+*[oracle](https://github.com/sdming/kdb/blob/master/example/oracle.go)  
+*[read](https://github.com/sdming/kdb/blob/master/example/read.go)  
 
 ## Driver
 
@@ -300,7 +512,7 @@ example :
 ## TODO  
 
 * ORM  
-* oracle, sqlite  
+
 
 ## License
 

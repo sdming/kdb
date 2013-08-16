@@ -173,7 +173,7 @@ func TestQuery(t *testing.T) {
 	}
 
 	var want string = `
-SELECT DISTINCT cbool, t1.cint, cnumeric AS 'a_cnumeric', t1.cstring AS 'a_cstring', AVG(cint) AS 'avg_cint', COUNT(t1.cint) AS 'count_cint', SUM(cint) AS 'sum_cint', MIN(t1.cint) AS 'min_cint', MAX(cint) AS 'max_cint', cint - 1 AS 'exp_cint' 
+SELECT DISTINCT cbool, t1.cint, cnumeric AS "a_cnumeric", t1.cstring AS "a_cstring", AVG(cint) AS "avg_cint", COUNT(t1.cint) AS "count_cint", SUM(cint) AS "sum_cint", MIN(t1.cint) AS "min_cint", MAX(cint) AS "max_cint", cint - 1 AS "exp_cint" 
 FROM ttable AS t1
 CROSS JOIN ttable_c AS t_c ON t1.cint = t_c.c_int 
 INNER JOIN ttable_c AS t_i ON t1.cstring = t_i.c_string 
@@ -331,11 +331,11 @@ MIN(cint) <=  ?
 AND
 MAX(cint) >=  ?  
 ORDER BY cint ASC, cfloat ASC, cnumeric DESC, cstring DESC, cdatetime ASC 
-LIMIT 3,101;
+LIMIT 3,101 ;
 `
 
 	if !strings.EqualFold(removeSpace(formatedSql), removeSpace(want)) {
-		t.Error("compiled query sql error")
+		t.Error("compiled query sql error", "\n", formatedSql, "\n", want)
 	}
 }
 
@@ -403,7 +403,7 @@ func TestProcedure(t *testing.T) {
 	p.Set("cdate", "2004-07-24")
 	p.Set("cdatetime", "2013-01-01 01:02:03")
 
-	comiler, err := GetCompiler("ansi")
+	comiler, err := GetCompiler("mysql")
 	if err != nil {
 		t.Error("can not find ansi compiler", err)
 	}

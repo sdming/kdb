@@ -698,45 +698,6 @@ type TypeInfoTag struct {
 	String *string  "kdb:{name=cstring}"
 }
 
-func TestParseTag(t *testing.T) {
-	s := "xx kdb:{nAme =test   ; pk; key=value} xx"
-	tag := parseTag(s)
-
-	t.Log(tag)
-
-	if tag.Name() != "test" {
-		t.Errorf("tag Name() error, want=[%v]; actual=[%v]", "test", tag.Name())
-	}
-	if !tag.Contains("pk") {
-		t.Errorf("tag Contains error, want=[%v]; actual=[%v]", true, tag.Contains("pk"))
-	}
-	if v, _ := tag.Option("key"); v != "value" {
-		t.Errorf("tag Option error, want=[%v]; actual=[%v]", "value", v)
-	}
-
-}
-
-func TestParseStruct(t *testing.T) {
-	var a interface{} = TypeInfoTag{}
-
-	si, err := getStructInfo(reflect.TypeOf(a))
-	if err != nil {
-		t.Error("getStructInfo error", err)
-		return
-	}
-
-	fi, ok := si.FieldByColName("CBOOL")
-	if !ok {
-		t.Errorf("FieldByColName error, want=[%v]; atucal=[%v]", true, ok)
-	}
-	if fi.fName != "Bool" {
-		t.Errorf("fName error, want=[%v]; atucal=[%v]", "bool", fi.fName)
-	}
-	if fi.colName != "cbool" {
-		t.Errorf("colName error, want=[%v]; atucal=[%v]", "cbool", fi.colName)
-	}
-}
-
 func TestRowStruct(t *testing.T) {
 	var v TypeInfo
 

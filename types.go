@@ -27,15 +27,6 @@ func (tag *tagOptions) Option(name string) (string, bool) {
 	return name, ok
 }
 
-// Name return option value of name
-func (tag *tagOptions) Name() string {
-	name, ok := tag.options["name"]
-	if !ok {
-		return ""
-	}
-	return name
-}
-
 // Contains return true if tagOptions contains option name
 func (tag *tagOptions) Contains(name string) bool {
 	_, ok := tag.options[name]
@@ -141,7 +132,7 @@ func parseStruct(structType reflect.Type) (*structInfo, error) {
 		tag := parseTag(string(f.Tag))
 
 		var colName string
-		if name := tag.Name(); name != "" {
+		if name, _ := tag.Option("name"); name != "" {
 			colName = name
 		} else {
 			colName = f.Name
@@ -166,7 +157,7 @@ func parseStruct(structType reflect.Type) (*structInfo, error) {
 	return si, nil
 }
 
-// siCache is cache of *structInfo, key by kpgpath_name
+// siCache is cache of *structInfo, key is kpgpath_name
 var siCache map[string]*structInfo = make(map[string]*structInfo)
 var siCacheLock sync.RWMutex
 
@@ -239,4 +230,83 @@ func newPtrValue(v reflect.Value) reflect.Value {
 		return v.Elem()
 	}
 	return v
+}
+
+// GEntity wrap a struct, provide interface Getter and Iterater
+type GEntity struct {
+	Data    interface{}
+	v       reflect.Value
+	fields  []*fieldInfo
+	filters []string
+}
+
+// String
+func (e GEntity) String() string {
+	return fmt.Sprint(e.Data)
+}
+
+// Get return field value by name
+func (e *GEntity) Get(name string) (interface{}, bool) {
+	l := len(e.fields)
+	var fi *fieldInfo
+
+	for i := 0; i < l; i++ {
+		if strings.EqualFold(e.fields[i].colName, name) {
+			fi = e.fields[i]
+			break
+		}
+	}
+	if fi == nil {
+		return nil, false
+	}
+	if e.filters != nil {
+		l = len(e.filters)
+		for i := 0; i < l; i++ {
+			if fi.tag.Contains(e.filters[i]) {
+				return nil, false
+			}
+		}
+	}
+
+	fv := e.v.Field(fi.index)
+	if !fv.IsValid() {
+		return nil, false
+	}
+	return fv.Interface(), true
+}
+
+// Fields return filted field names
+func (e *GEntity) Fields() []string {
+	l := len(e.fields)
+	names := make([]string, 0, l)
+	fl := len(e.filters)
+
+	for i := 0; i < l; i++ {
+		ignore := false
+		for j := 0; j < fl; j++ {
+			if e.fields[i].tag.Contains(e.filters[j]) {
+				ignore = true
+				break
+			}
+		}
+		if !ignore {
+			names = append(names, e.fields[i].colName)
+		}
+	}
+	return names
+}
+
+// Entity wrap a struct, provide interface Getter and Iterater
+func Entity(data interface{}, filters ...string) *GEntity {
+	si, err := getStructInfo(reflect.TypeOf(data))
+	if err != nil {
+		panic(err)
+	}
+
+	return &GEntity{
+		Data:    data,
+		v:       reflect.ValueOf(data),
+		fields:  si.fields,
+		filters: filters,
+	}
 }

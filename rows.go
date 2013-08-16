@@ -7,10 +7,7 @@ import (
 	"reflect"
 )
 
-// type Rows struct {
-// 	*sql.Rows
-// }
-
+// Read iterate rows and scan value to dest. dest can be *[]T, *[]map, *[]sliece, *[]struct.
 func Read(rows *sql.Rows, dest interface{}) error {
 	if dest == nil {
 		return errors.New("dest is nil")
@@ -226,6 +223,7 @@ func Read(rows *sql.Rows, dest interface{}) error {
 	return fmt.Errorf("Read does not support dest %v", dest)
 }
 
+// readInt64 copy value from rows to dest.
 func readInt64(rows *sql.Rows, dest interface{}) (err error) {
 	var v sql.NullInt64
 	if err = rows.Scan(&v); err != nil {
@@ -262,6 +260,7 @@ func readInt64(rows *sql.Rows, dest interface{}) (err error) {
 	return
 }
 
+// readString copy value from rows to dest.
 func readString(rows *sql.Rows, dest *string) (err error) {
 	var v sql.NullString
 	if err = rows.Scan(&v); err != nil {
@@ -274,6 +273,7 @@ func readString(rows *sql.Rows, dest *string) (err error) {
 	return
 }
 
+// readFloat64 copy value from rows to dest.
 func readFloat64(rows *sql.Rows, dest interface{}) (err error) {
 	var v sql.NullFloat64
 	if err = rows.Scan(&v); err != nil {
@@ -294,6 +294,7 @@ func readFloat64(rows *sql.Rows, dest interface{}) (err error) {
 	return
 }
 
+// readBool copy value from rows to dest.
 func readBool(rows *sql.Rows, dest *bool) (err error) {
 	var v sql.NullBool
 	if err = rows.Scan(&v); err != nil {
@@ -306,6 +307,7 @@ func readBool(rows *sql.Rows, dest *bool) (err error) {
 	return
 }
 
+// readSlice copy value from rows to dest. dest must be a slice.
 func readSlice(rows *sql.Rows, dest interface{}) (err error) {
 	var cols []string
 	if cols, err = rows.Columns(); err != nil {
@@ -649,6 +651,7 @@ func readSlice(rows *sql.Rows, dest interface{}) (err error) {
 	return
 }
 
+// readMap copy value from rows to dest. dest must be a map[string]T.
 func readMap(rows *sql.Rows, dest interface{}) (err error) {
 
 	var cols []string
@@ -1085,6 +1088,7 @@ func inDirect(v interface{}) interface{} {
 	}
 }
 
+// readStruct copy value from rows to dest, dest should be potiner to a struct
 func readStruct(rows *sql.Rows, dest interface{}) error {
 	if dest == nil {
 		return errors.New("dest is nil")
@@ -1224,6 +1228,7 @@ func setStructValue(rows *sql.Rows, dv reflect.Value, fields []*fieldInfo) error
 	return nil
 }
 
+// ReadRow scan current row value to dest. dest can be *T, []T, map[string]T
 func ReadRow(rows *sql.Rows, dest interface{}) error {
 	if rows == nil {
 		return errors.New("rows is nil.")
