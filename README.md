@@ -499,6 +499,7 @@ map rows to []T, use tags
 *[sqlite](https://github.com/sdming/kdb/blob/master/example/sqlite.go)  
 *[oracle](https://github.com/sdming/kdb/blob/master/example/oracle.go)  
 *[read](https://github.com/sdming/kdb/blob/master/example/read.go)  
+*[orm](https://github.com/sdming/kdb/blob/master/example/user.go) 
 
 ## Driver
 

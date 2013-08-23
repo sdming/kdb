@@ -448,21 +448,21 @@ func (db *DB) ExecFunc(name string, args Getter) (sql.Result, error) {
 }
 
 // Delete delete table by conditions, conditions format is column, operator, value, ...
-func (db *DB) Delete(table string, conditions ...interface{}) (int64, error) {
+func (db *DB) Delete(table string, conditions ...interface{}) (sql.Result, error) {
 	d := NewDelete(table)
 	if err := db.buildWhere(d.Where, conditions); err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	return rowsAffectedErr(db.ExecExp(d))
+	return db.ExecExp(d)
 }
 
 // DeleteByCol delete table with condition column = value
-func (db *DB) DeleteByCol(table string, column string, value interface{}) (int64, error) {
+func (db *DB) DeleteByCol(table string, column string, value interface{}) (sql.Result, error) {
 	d := NewDelete(table)
 	d.Where.Compare(Equals, column, value)
 
-	return rowsAffectedErr(db.ExecExp(d))
+	return db.ExecExp(d)
 }
 
 func (db *DB) buildWhere(w *Where, conditions []interface{}) error {
@@ -553,22 +553,22 @@ func (db *DB) getTableSchema(name string) (table *ansi.DbTable, err error) {
 }
 
 // Update update a table to data with conditions...
-func (db *DB) Update(table string, data Getter, conditions ...interface{}) (int64, error) {
+func (db *DB) Update(table string, data Getter, conditions ...interface{}) (sql.Result, error) {
 	var u *Update
 	t, err := db.getTableSchema(table)
 	if err != nil && ExplictSchema {
-		return 0, err
+		return nil, err
 	}
 
 	if t == nil {
 		iterater, ok := data.(Iterater)
 		if !ok {
-			return 0, errors.New("data isn't a Iterater")
+			return nil, errors.New("data isn't a Iterater")
 		}
 		fields := iterater.Fields()
 		l := len(fields)
 		if l == 0 {
-			return 0, errors.New("data doesn't has any field")
+			return nil, errors.New("data doesn't has any field")
 		}
 		u = NewUpdate(table)
 		for i := 0; i < l; i++ {
@@ -592,8 +592,51 @@ func (db *DB) Update(table string, data Getter, conditions ...interface{}) (int6
 	}
 
 	db.buildWhere(u.Where, conditions)
-	return rowsAffectedErr(db.ExecExp(u))
+	return db.ExecExp(u)
 }
+
+// // Update update a table to data with conditions...
+// func (db *DB) Update(table string, data Getter, conditions ...interface{}) (int64, error) {
+// 	var u *Update
+// 	t, err := db.getTableSchema(table)
+// 	if err != nil && ExplictSchema {
+// 		return 0, err
+// 	}
+
+// 	if t == nil {
+// 		iterater, ok := data.(Iterater)
+// 		if !ok {
+// 			return 0, errors.New("data isn't a Iterater")
+// 		}
+// 		fields := iterater.Fields()
+// 		l := len(fields)
+// 		if l == 0 {
+// 			return 0, errors.New("data doesn't has any field")
+// 		}
+// 		u = NewUpdate(table)
+// 		for i := 0; i < l; i++ {
+// 			if v, ok := data.Get(fields[i]); ok {
+// 				u.Set(fields[i], v)
+// 			}
+// 		}
+
+// 	} else {
+// 		u = NewUpdate(t.Name)
+// 		l := len(t.Columns)
+// 		for i := 0; i < l; i++ {
+// 			col := t.Columns[i]
+// 			if col.IsReadOnly || col.IsAutoIncrement {
+// 				continue
+// 			}
+// 			if v, ok := data.Get(col.Name); ok {
+// 				u.Set(col.Name, v)
+// 			}
+// 		}
+// 	}
+
+// 	db.buildWhere(u.Where, conditions)
+// 	return rowsAffectedErr(db.ExecExp(u))
+// }
 
 // UpdateColumn exec table.column = value where conditions...
 func (db *DB) UpdateColumn(table string, column string, value interface{}, conditions ...interface{}) (int64, error) {
@@ -604,22 +647,22 @@ func (db *DB) UpdateColumn(table string, column string, value interface{}, condi
 }
 
 // Insert insert data to table
-func (db *DB) Insert(table string, data Getter) (int64, error) {
+func (db *DB) Insert(table string, data Getter) (sql.Result, error) {
 	var insert *Insert
 	t, err := db.getTableSchema(table)
 	if err != nil && ExplictSchema {
-		return 0, err
+		return nil, err
 	}
 
 	if t == nil {
 		iterater, ok := data.(Iterater)
 		if !ok {
-			return 0, errors.New("data isn't a Iterater")
+			return nil, errors.New("data isn't a Iterater")
 		}
 		fields := iterater.Fields()
 		l := len(fields)
 		if l == 0 {
-			return 0, errors.New("data doesn't has any field")
+			return nil, errors.New("data doesn't has any field")
 		}
 		insert = NewInsert(table)
 		for i := 0; i < l; i++ {
@@ -641,8 +684,49 @@ func (db *DB) Insert(table string, data Getter) (int64, error) {
 		}
 	}
 
-	return lastInsertIdErr(db.ExecExp(insert))
+	return db.ExecExp(insert)
 }
+
+// // Insert insert data to table
+// func (db *DB) Insert(table string, data Getter) (int64, error) {
+// 	var insert *Insert
+// 	t, err := db.getTableSchema(table)
+// 	if err != nil && ExplictSchema {
+// 		return 0, err
+// 	}
+
+// 	if t == nil {
+// 		iterater, ok := data.(Iterater)
+// 		if !ok {
+// 			return 0, errors.New("data isn't a Iterater")
+// 		}
+// 		fields := iterater.Fields()
+// 		l := len(fields)
+// 		if l == 0 {
+// 			return 0, errors.New("data doesn't has any field")
+// 		}
+// 		insert = NewInsert(table)
+// 		for i := 0; i < l; i++ {
+// 			if v, ok := data.Get(fields[i]); ok {
+// 				insert.Set(fields[i], v)
+// 			}
+// 		}
+// 	} else {
+// 		insert = NewInsert(t.Name)
+// 		l := len(t.Columns)
+// 		for i := 0; i < l; i++ {
+// 			col := t.Columns[i]
+// 			if col.IsReadOnly || col.IsAutoIncrement {
+// 				continue
+// 			}
+// 			if v, ok := data.Get(col.Name); ok {
+// 				insert.Set(col.Name, v)
+// 			}
+// 		}
+// 	}
+
+// 	return lastInsertIdErr(db.ExecExp(insert))
+// }
 
 type schemaCache struct {
 	tables    map[string]*ansi.DbTable

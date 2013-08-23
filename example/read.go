@@ -8,9 +8,9 @@ import (
 
 /*
 CREATE TABLE ttypes (
-	id 			int, 
+	id 		int, 
 	cbool 	int,
-	cint 		int,
+	cint 	int,
 	cfloat 	float,
 	cstring varchar(100)
 );
